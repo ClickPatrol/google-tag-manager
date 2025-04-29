@@ -1,5 +1,5 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/google-tag-manager"
 versions:
-  - sha: 772dc66
+  - sha: d46fa06b7aabb56b6ca2ad6e99d606edf9031ca2
     changeNotes: First release.
