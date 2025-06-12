@@ -2,9 +2,13 @@ homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/google-tag-manager"
 versions:
  # Latest version
+  - sha: ce8f31525b38f684eb5b8d25422f1ad112c5a7c5
+    changeNotes: |2
+      Changed template url string
+ 
+  # Older versions
   - sha: f56b8ca6bf96c00f7585553cf62511d9dbedfb5c
     changeNotes: |2
       Changed template url
-  # Older versions
   - sha: d46fa06b7aabb56b6ca2ad6e99d606edf9031ca2
     changeNotes: First release.
