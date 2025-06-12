@@ -76,7 +76,7 @@ ___WEB_PERMISSIONS___
             "listItem": [
               {
                 "type": 1,
-                "string": "https://monitor-001.clckptrl.com/www/?uid\u003d*"
+                "string": "https://trck-002.clckptrl.com/?uid\u003d*"
               }
             ]
           }
