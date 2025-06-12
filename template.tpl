@@ -52,7 +52,7 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 const uid = data.uid;
 
 // URL van het script dat geïnjecteerd moet worden
-const url = 'https://monitor-001.clckptrl.com/www/?uid=' + uid;
+const url = 'https://trck-002.clckptrl.com/?uid=' + uid;
 
 // Gebruik de door GTM verstrekte API om een script element te injecteren
 const injectScript = require('injectScript');
