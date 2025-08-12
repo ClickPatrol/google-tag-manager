@@ -48,14 +48,14 @@ ___TEMPLATE_PARAMETERS___
 
 ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 
-// Haal de uid uit de template instellingen
+// Get the UID from the url
 const uid = data.uid;
 
-// Haal de huidige URL op met alle query parameters
+// Get parameters from the url
 const getUrl = require('getUrl');
 const currentUrl = getUrl();
 
-// Base URL van het script
+// Get the base url
 const baseUrl = 'https://trck-002.clckptrl.com/?uid=' + uid;
 
 // Extract query string from current URL
@@ -71,7 +71,7 @@ if (questionMarkIndex !== -1) {
   }
 }
 
-// Gebruik de door GTM verstrekte API om een script element te injecteren
+// Get the documents
 const injectScript = require('injectScript');
 injectScript(fullUrl, data.gtmOnSuccess, data.gtmOnFailure, 'clickpatrol-script');
 
