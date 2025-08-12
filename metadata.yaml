@@ -1,12 +1,14 @@
 homepage: "https://clickpatrol.com"
-documentation: "https://clickpatrol.com/google-tag-manager"
+documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
  # Latest version
+  - sha: a9e0991f2b5d76a74dd222fa6eb4c9e666d82103
+    changeNotes: Changed url parameters and comments
+ 
+  # Older versions
   - sha: 718bd90a33778e55e6916c4d2857fcfaabf503c5
     changeNotes: |2
       Changed url parameters
- 
-  # Older versions
   - sha: ce8f31525b38f684eb5b8d25422f1ad112c5a7c5
     changeNotes: |2
       Changed template url string
