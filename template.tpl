@@ -14,6 +14,7 @@ ___INFO___
   "version": 1,
   "securityGroups": [],
   "displayName": "ClickPatrol - Tag",
+  "categories": ["ANALYTICS", "ADVERTISING"],
   "brand": {
     "id": "brand_dummy",
     "displayName": "",
