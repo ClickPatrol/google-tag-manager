@@ -56,16 +56,72 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 const getUrl = require('getUrl');
 const injectScript = require('injectScript');
 const encodeUriComponent = require('encodeUriComponent');
+const getCookieValues = require('getCookieValues');
+const setCookie = require('setCookie');
+const localStorage = require('localStorage');
+const generateRandom = require('generateRandom');
+const getTimestampMillis = require('getTimestampMillis');
+
+const SESSION_KEY = 'cp_session_id';
+const SESSION_TTL_SECONDS = 24 * 60 * 60; // 1 day, mirrors the original cookie lifetime
+const HEX = '0123456789abcdef';
+
+// crypto.getRandomValues is unavailable in the GTM sandbox; build an equivalent
+// "<timestamp><16 hex chars>" id with generateRandom + getTimestampMillis.
+function generateId() {
+  let random = '';
+  for (let i = 0; i < 16; i++) {
+    random = random + HEX.charAt(generateRandom(0, 15));
+  }
+  return 'cp_' + getTimestampMillis() + random;
+}
+
+// Read the session id: cookie first, then localStorage (sandbox equivalent of
+// the original sessionStorage fallback), otherwise generate a fresh one.
+let sessionId = '';
+const cookieValues = getCookieValues(SESSION_KEY);
+if (cookieValues && cookieValues.length > 0 && cookieValues[0]) {
+  sessionId = cookieValues[0];
+}
+
+if (!sessionId && localStorage) {
+  const stored = localStorage.getItem(SESSION_KEY);
+  if (stored) {
+    sessionId = stored;
+  }
+}
+
+if (!sessionId) {
+  sessionId = generateId();
+}
+
+// Persist in both the cookie and localStorage. domain 'auto' writes the cookie
+// at the broadest registrable domain so the session id is shared across subdomains.
+setCookie(SESSION_KEY, sessionId, {
+  'domain': 'auto',
+  'path': '/',
+  'max-age': SESSION_TTL_SECONDS,
+  'samesite': 'lax'
+});
+
+if (localStorage) {
+  localStorage.setItem(SESSION_KEY, sessionId);
+}
 
 const uid = encodeUriComponent(data.uid);
 const pageQuery = getUrl('query');
+const pageHref = getUrl('href');
 
 let scriptUrl = 'https://trck-002.clckptrl.com/?uid=' + uid;
 if (pageQuery) {
   scriptUrl = scriptUrl + '&' + pageQuery;
 }
+scriptUrl = scriptUrl + '&u=' + encodeUriComponent(pageHref);
+scriptUrl = scriptUrl + '&session_id=' + encodeUriComponent(sessionId);
 
-injectScript(scriptUrl, data.gtmOnSuccess, data.gtmOnFailure, scriptUrl);
+// No cacheToken: the tracker must load on every fire (incl. SPA revisits to the
+// same URL), matching the original "new <script> per call" behavior.
+injectScript(scriptUrl, data.gtmOnSuccess, data.gtmOnFailure);
 
 
 ___WEB_PERMISSIONS___
@@ -121,6 +177,161 @@ ___WEB_PERMISSIONS___
       ]
     },
     "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "get_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "cookieAccess",
+          "value": {
+            "type": 1,
+            "string": "specific"
+          }
+        },
+        {
+          "key": "cookieNames",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 1,
+                "string": "cp_session_id"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "set_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "allowedCookies",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "cp_session_id"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "access_local_storage",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "keys",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "cp_session_id"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
   }
 ]
 
@@ -128,46 +339,126 @@ ___WEB_PERMISSIONS___
 ___TESTS___
 
 scenarios:
-- name: Builds script URL with only the UID when page has no query string
+- name: Builds script URL with UID, page URL and a generated session id
   code: |-
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
-    mock('injectScript', function(url, onSuccess, onFailure, cacheToken) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234');
-      assertThat(cacheToken).isEqualTo(url);
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&session_id=cp_10000000000000000000');
       onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
-- name: Appends the page query string to the script URL
+- name: Appends the page query string before the tracking params
   code: |-
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
     mock('getUrl', function(component) {
       if (component === 'query') {
         return 'source=g&gclid=abc123&utm_source=google';
       }
       return 'https://example.com/page';
     });
-    mock('injectScript', function(url, onSuccess, onFailure, cacheToken) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&source=g&gclid=abc123&utm_source=google');
-      assertThat(cacheToken).isEqualTo(url);
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&source=g&gclid=abc123&utm_source=google&u=https%3A%2F%2Fexample.com%2Fpage&session_id=cp_10000000000000000000');
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Reuses the existing session id from the cookie
+  code: |-
+    mock('getCookieValues', function(name) {
+      return ['cp_existing_session'];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getUrl', function(component) {
+      return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&session_id=cp_existing_session');
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Falls back to the session id stored in localStorage
+  code: |-
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return 'cp_stored_session'; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getUrl', function(component) {
+      return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&session_id=cp_stored_session');
       onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: URL-encodes the UID so unsafe characters cannot break the URL
   code: |-
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=unsafe%26value');
+      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=unsafe%26value&u=https%3A%2F%2Fexample.com%2Fpage&session_id=cp_10000000000000000000');
       onSuccess();
     });
     runCode({uid: 'unsafe&value'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: Calls gtmOnFailure when the script fails to load
   code: |-
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
@@ -181,3 +472,5 @@ scenarios:
 ___NOTES___
 
 ClickPatrol Traffic Quality measurement tag for Google Tag Manager.
+
+
