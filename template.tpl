@@ -47,6 +47,107 @@ ___TEMPLATE_PARAMETERS___
         "type": "NON_EMPTY"
       }
     ]
+  },
+  {
+    "type": "CHECKBOX",
+    "name": "enableGclidRecovery",
+    "checkboxText": "Restore GCLID for Safari/ITP (recreate _gcl_aw from the vd parameter)",
+    "simpleValueType": true,
+    "defaultValue": false,
+    "help": "When enabled, if the standard gclid is missing from the URL but a custom \u0027vd\u0027 parameter is present (set in Google Ads via Final URL suffix ?vd\u003d{gclid}), the tag recreates the _gcl_aw cookie so Google Ads attribution survives Safari/ITP. Fire this tag only after ad_storage consent is granted."
+  },
+  {
+    "type": "GROUP",
+    "name": "cookieExtenderGroup",
+    "displayName": "Cookie lifetime extension (optional)",
+    "groupStyle": "ZIPPY_CLOSED",
+    "help": "Re-writes the lifetime of existing first-party cookies per provider. All options are OFF by default (\u0027don\u0027t extend\u0027). \u003cb\u003eLimitations:\u003c/b\u003e this runs client-side, so HttpOnly / server-set cookies (the Stape FP* cookies, _dcid, stape_klaviyo_*) cannot be touched and Safari/Firefox (ITP) still cap JavaScript cookies to ~7 days. Reliable extension only on Chrome/Edge. For true cross-browser extension a server-side container is required.",
+    "subParams": [
+      {
+        "type": "CHECKBOX",
+        "name": "extendStape",
+        "checkboxText": "Stape (_dcid, stape) – 13 months",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendGoogleAnalytics",
+        "checkboxText": "Google Analytics (_ga, FPID) – 13 months",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendGoogleAds",
+        "checkboxText": "Google Ads (FPAU, FPGCLAW, _gcl_au, FPGCLGB, _gcl_aw, _gcl_gb, FPGCLGS, _gcl_gs, FPGSID) – 90 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendFacebook",
+        "checkboxText": "Facebook (_fbp, _fbc) – 90 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendTikTok",
+        "checkboxText": "TikTok (_ttp – 13 months, ttclid – 1 month)",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendAffiliates",
+        "checkboxText": "Affiliates (awin_*, rakuten_*, outbrain_cid, taboola_cid, cje) – 365-400 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendKlaviyo",
+        "checkboxText": "Klaviyo (stape_klaviyo_kx, stape_klaviyo_email) – 400 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendSnapchat",
+        "checkboxText": "Snapchat (_scclid – 90 days, _scid – 400 days)",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendLinkedin",
+        "checkboxText": "LinkedIn (li_fat_id) – 90 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendMicrosoft",
+        "checkboxText": "Microsoft / Bing (uet_vid, _uetmsclkid) – 90 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendPinterest",
+        "checkboxText": "Pinterest (_epik) – 90 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "extendGoogleDV360",
+        "checkboxText": "Google D\u0026V 360 (FPGCLDC, _gcl_dc) – 90 days",
+        "simpleValueType": true,
+        "defaultValue": false
+      }
+    ]
   }
 ]
 
@@ -61,6 +162,8 @@ const setCookie = require('setCookie');
 const localStorage = require('localStorage');
 const generateRandom = require('generateRandom');
 const getTimestampMillis = require('getTimestampMillis');
+const getQueryParameters = require('getQueryParameters');
+const Math = require('Math');
 
 const SESSION_KEY = 'cp_session_id';
 const SESSION_TTL_SECONDS = 24 * 60 * 60; // 1 day, mirrors the original cookie lifetime
@@ -106,6 +209,80 @@ setCookie(SESSION_KEY, sessionId, {
 
 if (localStorage) {
   localStorage.setItem(SESSION_KEY, sessionId);
+}
+
+// GCLID recovery for Safari/ITP: if the real gclid was stripped but our custom
+// 'vd' param carries it (Google Ads Final URL suffix ?vd={gclid}), recreate the
+// _gcl_aw cookie so Google Ads attribution still works.
+if (data.enableGclidRecovery) {
+  const realGclid = getQueryParameters('gclid');
+  const vdGclid = getQueryParameters('vd');
+  const existingGclAw = getCookieValues('_gcl_aw');
+
+  if (!realGclid && vdGclid && (!existingGclAw || existingGclAw.length === 0)) {
+    // Google's _gcl_aw format is GCL.<unix_seconds>.<gclid>.
+    const nowSeconds = Math.floor(getTimestampMillis() / 1000);
+    setCookie('_gcl_aw', 'GCL.' + nowSeconds + '.' + vdGclid, {
+      'domain': 'auto',
+      'path': '/',
+      'max-age': 90 * 24 * 60 * 60,
+      'samesite': 'lax'
+    });
+  }
+}
+
+// COOKIE LIFETIME EXTENSION (client-side / WEB), opt-in per provider.
+//
+// KNOWN LIMITATIONS - WHAT DOES NOT WORK YET AND WHY (don't forget for later):
+//
+// 1. HttpOnly / server-set cookies CANNOT be read or written from JavaScript.
+//    getCookieValues() never sees them, so for those cookies the loop below is a
+//    no-op. This affects the cookies marked "[server-set]" (the Stape FP* cookies,
+//    _dcid and stape_klaviyo_*). Truly extending those requires a server-side GTM
+//    container (e.g. stape-io/cookie-extender-tag).
+//
+// 2. Safari & Firefox (ITP) cap JavaScript-set cookies to ~7 days regardless of the
+//    max-age we set here. Extension therefore only works reliably on Chrome/Edge
+//    (which cap at 400 days - hence no value above L400 is used).
+//
+// TODO (later): build a separate SERVER-side template for real cross-browser extension.
+const DAY = 24 * 60 * 60;
+const L30 = 30 * DAY;    // 1 month
+const L90 = 90 * DAY;    // 90 days
+const L365 = 365 * DAY;  // 365 days
+const L400 = 400 * DAY;  // 400 days / 13 months (browser cap)
+
+const extendGroups = [
+  { on: data.extendStape,           list: [['_dcid', L400], ['stape', L400]] },                  // _dcid = [server-set]
+  { on: data.extendGoogleAnalytics, list: [['_ga', L400], ['FPID', L400]] },                     // FPID = [server-set]
+  { on: data.extendGoogleAds,       list: [['FPAU', L90], ['FPGCLAW', L90], ['_gcl_au', L90], ['FPGCLGB', L90], ['_gcl_aw', L90], ['_gcl_gb', L90], ['FPGCLGS', L90], ['_gcl_gs', L90], ['FPGSID', L90]] }, // FP* = [server-set]
+  { on: data.extendFacebook,        list: [['_fbp', L90], ['_fbc', L90]] },
+  { on: data.extendTikTok,          list: [['_ttp', L400], ['ttclid', L30]] },
+  { on: data.extendAffiliates,      list: [['awin_awc', L400], ['awin_source', L400], ['awin_sn_awc', L365], ['rakuten_site_id', L400], ['rakuten_time_entered', L400], ['rakuten_ran_mid', L400], ['rakuten_ran_eaid', L400], ['rakuten_ran_site_id', L400], ['outbrain_cid', L400], ['taboola_cid', L400], ['cje', L400]] },
+  { on: data.extendKlaviyo,         list: [['stape_klaviyo_kx', L400], ['stape_klaviyo_email', L400]] }, // both = [server-set]
+  { on: data.extendSnapchat,        list: [['_scclid', L90], ['_scid', L400]] },
+  { on: data.extendLinkedin,        list: [['li_fat_id', L90]] },
+  { on: data.extendMicrosoft,       list: [['uet_vid', L90], ['_uetmsclkid', L90]] },
+  { on: data.extendPinterest,       list: [['_epik', L90]] },
+  { on: data.extendGoogleDV360,     list: [['FPGCLDC', L90], ['_gcl_dc', L90]] }                  // FPGCLDC = [server-set]
+];
+
+for (let g = 0; g < extendGroups.length; g++) {
+  if (!extendGroups[g].on) continue;
+  const cookieList = extendGroups[g].list;
+  for (let c = 0; c < cookieList.length; c++) {
+    const cName = cookieList[c][0];
+    const cVals = getCookieValues(cName);
+    if (cVals && cVals.length > 0 && cVals[0]) {
+      setCookie(cName, cVals[0], {
+        'domain': 'auto',
+        'path': '/',
+        'max-age': cookieList[c][1],
+        'samesite': 'lax',
+        'secure': true
+      });
+    }
+  }
 }
 
 const uid = encodeUriComponent(data.uid);
@@ -200,6 +377,158 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "cp_session_id"
+              },
+              {
+                "type": 1,
+                "string": "_gcl_aw"
+              },
+              {
+                "type": 1,
+                "string": "_dcid"
+              },
+              {
+                "type": 1,
+                "string": "stape"
+              },
+              {
+                "type": 1,
+                "string": "_ga"
+              },
+              {
+                "type": 1,
+                "string": "FPID"
+              },
+              {
+                "type": 1,
+                "string": "FPAU"
+              },
+              {
+                "type": 1,
+                "string": "FPGCLAW"
+              },
+              {
+                "type": 1,
+                "string": "_gcl_au"
+              },
+              {
+                "type": 1,
+                "string": "FPGCLGB"
+              },
+              {
+                "type": 1,
+                "string": "_gcl_gb"
+              },
+              {
+                "type": 1,
+                "string": "FPGCLGS"
+              },
+              {
+                "type": 1,
+                "string": "_gcl_gs"
+              },
+              {
+                "type": 1,
+                "string": "FPGSID"
+              },
+              {
+                "type": 1,
+                "string": "_fbp"
+              },
+              {
+                "type": 1,
+                "string": "_fbc"
+              },
+              {
+                "type": 1,
+                "string": "_ttp"
+              },
+              {
+                "type": 1,
+                "string": "ttclid"
+              },
+              {
+                "type": 1,
+                "string": "awin_awc"
+              },
+              {
+                "type": 1,
+                "string": "awin_source"
+              },
+              {
+                "type": 1,
+                "string": "awin_sn_awc"
+              },
+              {
+                "type": 1,
+                "string": "rakuten_site_id"
+              },
+              {
+                "type": 1,
+                "string": "rakuten_time_entered"
+              },
+              {
+                "type": 1,
+                "string": "rakuten_ran_mid"
+              },
+              {
+                "type": 1,
+                "string": "rakuten_ran_eaid"
+              },
+              {
+                "type": 1,
+                "string": "rakuten_ran_site_id"
+              },
+              {
+                "type": 1,
+                "string": "outbrain_cid"
+              },
+              {
+                "type": 1,
+                "string": "taboola_cid"
+              },
+              {
+                "type": 1,
+                "string": "cje"
+              },
+              {
+                "type": 1,
+                "string": "stape_klaviyo_kx"
+              },
+              {
+                "type": 1,
+                "string": "stape_klaviyo_email"
+              },
+              {
+                "type": 1,
+                "string": "_scclid"
+              },
+              {
+                "type": 1,
+                "string": "_scid"
+              },
+              {
+                "type": 1,
+                "string": "li_fat_id"
+              },
+              {
+                "type": 1,
+                "string": "uet_vid"
+              },
+              {
+                "type": 1,
+                "string": "_uetmsclkid"
+              },
+              {
+                "type": 1,
+                "string": "_epik"
+              },
+              {
+                "type": 1,
+                "string": "FPGCLDC"
+              },
+              {
+                "type": 1,
+                "string": "_gcl_dc"
               }
             ]
           }
@@ -251,6 +580,1792 @@ ___WEB_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "cp_session_id"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_gcl_aw"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_dcid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "stape"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_ga"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPID"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPAU"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPGCLAW"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_gcl_au"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPGCLGB"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_gcl_gb"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPGCLGS"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_gcl_gs"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPGSID"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_fbp"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_fbc"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_ttp"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ttclid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "awin_awc"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "awin_source"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "awin_sn_awc"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "rakuten_site_id"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "rakuten_time_entered"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "rakuten_ran_mid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "rakuten_ran_eaid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "rakuten_ran_site_id"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "outbrain_cid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "taboola_cid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "cje"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "stape_klaviyo_kx"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "stape_klaviyo_email"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_scclid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_scid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "li_fat_id"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "uet_vid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_uetmsclkid"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_epik"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "FPGCLDC"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_gcl_dc"
                   },
                   {
                     "type": 1,
@@ -351,6 +2466,7 @@ scenarios:
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
@@ -372,6 +2488,7 @@ scenarios:
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
       if (component === 'query') {
         return 'source=g&gclid=abc123&utm_source=google';
@@ -396,6 +2513,7 @@ scenarios:
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
@@ -417,6 +2535,7 @@ scenarios:
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
@@ -438,6 +2557,7 @@ scenarios:
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
@@ -459,6 +2579,7 @@ scenarios:
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
       return component === 'query' ? '' : 'https://example.com/page';
     });
@@ -467,10 +2588,205 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnFailure').wasCalled();
+- name: Recreates the _gcl_aw cookie from vd when gclid is missing
+  code: |-
+    let gclAwCookie = null;
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_gcl_aw') {
+        gclAwCookie = value;
+      }
+    });
+    mock('getQueryParameters', function(key) {
+      if (key === 'vd') { return 'EAIaIQobCh-test'; }
+      return undefined;
+    });
+    mock('getUrl', function(component) {
+      return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', enableGclidRecovery: true});
+    assertThat(gclAwCookie).isEqualTo('GCL.1.EAIaIQobCh-test');
+- name: Does not recreate _gcl_aw when recovery is disabled
+  code: |-
+    let gclAwWritten = false;
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_gcl_aw') { gclAwWritten = true; }
+    });
+    mock('getQueryParameters', function(key) {
+      if (key === 'vd') { return 'EAIaIQobCh-test'; }
+      return undefined;
+    });
+    mock('getUrl', function(component) {
+      return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', enableGclidRecovery: false});
+    assertThat(gclAwWritten).isEqualTo(false);
+- name: Does not recreate _gcl_aw when the real gclid is present
+  code: |-
+    let gclAwWritten = false;
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_gcl_aw') { gclAwWritten = true; }
+    });
+    mock('getQueryParameters', function(key) {
+      if (key === 'gclid') { return 'realgclid'; }
+      if (key === 'vd') { return 'EAIaIQobCh-test'; }
+      return undefined;
+    });
+    mock('getUrl', function(component) {
+      return component === 'query' ? 'gclid=realgclid&vd=EAIaIQobCh-test' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', enableGclidRecovery: true});
+    assertThat(gclAwWritten).isEqualTo(false);
+- name: Does not overwrite an existing _gcl_aw cookie
+  code: |-
+    let gclAwWritten = false;
+    mock('getCookieValues', function(name) {
+      if (name === '_gcl_aw') { return ['GCL.123.existing']; }
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_gcl_aw') { gclAwWritten = true; }
+    });
+    mock('getQueryParameters', function(key) {
+      if (key === 'vd') { return 'EAIaIQobCh-test'; }
+      return undefined;
+    });
+    mock('getUrl', function(component) {
+      return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', enableGclidRecovery: true});
+    assertThat(gclAwWritten).isEqualTo(false);
+- name: Extends a cookie lifetime when its provider group is enabled
+  code: |-
+    let fbpMaxAge = null;
+    mock('getCookieValues', function(name) {
+      if (name === '_fbp') { return ['fb.1.123.456']; }
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_fbp') { fbpMaxAge = options['max-age']; }
+    });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+      return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', extendFacebook: true});
+    assertThat(fbpMaxAge).isEqualTo(90 * 24 * 60 * 60);
+- name: Does not extend cookies when the provider group is disabled (default)
+  code: |-
+    let fbpWritten = false;
+    mock('getCookieValues', function(name) {
+      if (name === '_fbp') { return ['fb.1.123.456']; }
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_fbp') { fbpWritten = true; }
+    });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+      return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', extendFacebook: false});
+    assertThat(fbpWritten).isEqualTo(false);
+- name: Does not write a cookie that is absent even when its group is enabled
+  code: |-
+    let scidWritten = false;
+    mock('getCookieValues', function(name) {
+      return [];
+    });
+    mockObject('localStorage', {
+      getItem: function() { return null; },
+      setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value, options) {
+      if (name === '_scid') { scidWritten = true; }
+    });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+      return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+      onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', extendSnapchat: true});
+    assertThat(scidWritten).isEqualTo(false);
 
 
 ___NOTES___
 
 ClickPatrol Traffic Quality measurement tag for Google Tag Manager.
+
+Cookie lifetime extension (optional, opt-in per provider, all OFF by default):
+- Runs client-side. HttpOnly / server-set cookies (the Stape FP* cookies, _dcid,
+  stape_klaviyo_*) are invisible to JavaScript and therefore cannot be extended here
+  (no-op). They are still listed so the option is complete where JS has access.
+- Safari & Firefox (ITP) cap JavaScript-set cookies to ~7 days regardless of max-age,
+  so extension only works reliably on Chrome/Edge (which cap at 400 days).
+- TODO (later): add a separate server-side template for true cross-browser cookie
+  lifetime extension (see stape-io/cookie-extender-tag).
 
 
