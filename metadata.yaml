@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: f3c67349497232a58a9a0d1f88f9d2621c2c0c84
+    changeNotes: updated tag for better performance
   - sha: 09f51a52f6ed38b28fecdaeb839a61270869fdd5
     changeNotes: setback to old tag manager
   - sha: d4618fc92abc5c43e32455dc1d50a1f4da0ff919
