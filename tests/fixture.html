@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ClickPatrol cache fixture</title>
+</head>
+<body>
+<p id="out">ready</p>
+<pre id="log"></pre>
+<script>
+(function () {
+  var SCHEMA = '1';
+  var B36 = '0123456789abcdefghijklmnopqrstuvwxyz';
+  function toBase36(n) {
+    var o = '';
+    if (n <= 0) return '0';
+    while (n > 0) { o = B36.charAt(n % 36) + o; n = Math.floor(n / 36); }
+    return o;
+  }
+  function sessionSuffix(id) { return id && id.length > 8 ? id.substring(id.length - 8) : (id || ''); }
+  function encodeClass(kind, traffic, sessId, ts) {
+    return SCHEMA + '.' + kind + '.' + traffic + '.' + sessionSuffix(sessId) + '.' + toBase36(ts);
+  }
+  function encodeAudience(audience, sessId, ts) {
+    return SCHEMA + '.' + sessionSuffix(sessId) + '.' + toBase36(ts) + '.' + encodeURIComponent(JSON.stringify(audience));
+  }
+  function parseClass(raw, sessId) {
+    var p = (raw || '').split('.');
+    if (p.length !== 5 || p[0] !== SCHEMA || p[3] !== sessionSuffix(sessId)) return null;
+    if ((p[1] !== 'L' && p[1] !== 'S') || (p[2] !== 's' && p[2] !== 'f')) return null;
+    return { event: 'ClickPatrol_' + (p[1] === 'L' ? 'Legitimate' : 'Suspicious'), traffic: p[2] === 's' ? 'safe' : 'fake' };
+  }
+  var sess = 'cp_existing_session';
+  var audience = { custom_audience_iphone: false, russia_exclusions: false, apple_gebruikers: false, legitieme_audience: false };
+  var now = Date.now();
+  var classValue = encodeClass('S', 'f', sess, now);
+  var audienceValue = encodeAudience(audience, sess, now);
+  var t0 = performance.now();
+  var payload = parseClass(classValue, sess);
+  payload.audience = JSON.parse(decodeURIComponent(audienceValue.split('.').slice(3).join('.')));
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push(payload);
+  var elapsed = performance.now() - t0;
+  var lines = [
+    'classBytes=' + classValue.length,
+    'audienceBytes=' + audienceValue.length,
+    'replayMs=' + elapsed.toFixed(3),
+    'event=' + payload.event,
+    'traffic=' + payload.traffic,
+    'audienceKeys=' + Object.keys(payload.audience).join(',')
+  ];
+  document.getElementById('out').textContent = elapsed < 1 ? 'cache-hit under 1ms' : 'cache-hit over 1ms';
+  document.getElementById('log').textContent = lines.join('\n');
+})();
+</script>
+</body>
+</html>
