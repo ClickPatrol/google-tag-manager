@@ -1,7 +1,7 @@
 # Classification cache contract
 
 First-party stores used by the GTM template and the CMS / website loaders.
-`trck-002` is unchanged. Gallery publish of the template is a separate step.
+`trck-002` is unchanged. The GTM tag writes the stores itself after that script loads. Gallery publish of the template is a separate step.
 
 ## Cookies and localStorage
 

@@ -158,6 +158,7 @@ const generateRandom = require('generateRandom');
 const getTimestampMillis = require('getTimestampMillis');
 const getQueryParameters = require('getQueryParameters');
 const copyFromDataLayer = require('copyFromDataLayer');
+const copyFromWindow = require('copyFromWindow');
 const createQueue = require('createQueue');
 const getType = require('getType');
 const JSON = require('JSON');
@@ -479,19 +480,43 @@ function trafficCodeFromValue(traffic) {
   return '';
 }
 
-function storeFromDataLayer(sessId) {
-  const eventName = copyFromDataLayer('event');
-  const kind = classKindFromEvent(eventName);
-  const trafficCode = trafficCodeFromValue(copyFromDataLayer('traffic'));
+function storeFromItem(item, sessId) {
+  if (!item || getType(item) !== 'object') {
+    return;
+  }
+  const kind = classKindFromEvent(item.event);
+  const trafficCode = trafficCodeFromValue(item.traffic);
   const now = getTimestampMillis();
   if (kind && trafficCode) {
     writeClassValue(encodeClass(kind, trafficCode, sessId, now));
   }
-  const audience = copyFromDataLayer('audience');
-  if (audience) {
-    const encoded = encodeAudience(audience, sessId, now);
+  if (item.audience) {
+    const encoded = encodeAudience(item.audience, sessId, now);
     if (encoded) {
       writeAudienceValue(encoded);
+    }
+  }
+}
+
+function storeFromDataLayer(sessId) {
+  storeFromItem({
+    event: copyFromDataLayer('event'),
+    traffic: copyFromDataLayer('traffic'),
+    audience: copyFromDataLayer('audience')
+  }, sessId);
+}
+
+function storeLatestFromWindow(sessId) {
+  const dl = copyFromWindow('dataLayer');
+  const dlType = getType(dl);
+  if (!dl || (dlType !== 'array' && dlType !== 'object') || !dl.length) {
+    return;
+  }
+  for (let i = dl.length - 1; i >= 0; i--) {
+    const item = dl[i];
+    if (item && getType(item) === 'object' && item.event && ('' + item.event).indexOf('ClickPatrol_') === 0) {
+      storeFromItem(item, sessId);
+      return;
     }
   }
 }
@@ -592,7 +617,10 @@ if (currentEvent && currentEvent.indexOf('ClickPatrol_') === 0) {
   scriptUrl = scriptUrl + '&visitor_id=' + encodeUriComponent(visitorId);
   scriptUrl = scriptUrl + '&session_id=' + encodeUriComponent(sessionId);
 
-  injectScript(scriptUrl, data.gtmOnSuccess, data.gtmOnFailure);
+  injectScript(scriptUrl, function () {
+    storeLatestFromWindow(sessionId);
+    data.gtmOnSuccess();
+  }, data.gtmOnFailure);
 }
 
 
@@ -2584,6 +2612,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2608,6 +2637,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2635,6 +2665,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -2660,6 +2691,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === 'cp_visitor_id') { return ['cp_existing_visitor']; }
     return [];
@@ -2685,6 +2717,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2711,6 +2744,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2735,6 +2769,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2759,6 +2794,7 @@ scenarios:
     let gclAwCookie = null;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2790,6 +2826,7 @@ scenarios:
     let gclAwWritten = false;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2819,6 +2856,7 @@ scenarios:
     let gclAwWritten = false;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2849,6 +2887,7 @@ scenarios:
     let gclAwWritten = false;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === '_gcl_aw') { return ['GCL.123.existing']; }
     return [];
@@ -2879,6 +2918,7 @@ scenarios:
     let fbpMaxAge = null;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === '_fbp') { return ['fb.1.123.456']; }
     return [];
@@ -2906,6 +2946,7 @@ scenarios:
     let fbpWritten = false;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === '_fbp') { return ['fb.1.123.456']; }
     return [];
@@ -2933,6 +2974,7 @@ scenarios:
     let scidWritten = false;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -2996,6 +3038,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     if (name === 'cp_class') { return ['1.S.f._session.rs']; }
@@ -3039,6 +3082,7 @@ scenarios:
     }
     });
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -3101,6 +3145,7 @@ scenarios:
   code: |-
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     if (name === 'cp_audience') { return ['1._session.rs.%7B%22vip_eu%22%3Atrue%7D']; }
@@ -3125,6 +3170,41 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertThat(injected).isEqualTo(true);
+- name: Stores classification from window dataLayer after the tracker loads
+  code: |-
+    let classValue = null;
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === 'dataLayer') {
+    return [{ event: 'ClickPatrol_Suspicious', traffic: 'fake' }];
+    }
+    return [];
+    });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value) {
+    if (name === 'cp_class') { classValue = value; }
+    });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess) {
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(classValue).isEqualTo('1.S.f._session.rs');
+    assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
 
@@ -3140,10 +3220,9 @@ Cookie lifetime extension (optional, opt-in per provider, all OFF by default):
   lifetime extension (see stape-io/cookie-extender-tag).
 
 Classification cache (cp_class + cp_audience):
-- After the first ClickPatrol_* event, the tag stores event/traffic and the
-  audience object in separate first-party cookies (plus localStorage backup).
+- After trck-002 loads, the tag reads window.dataLayer and stores the latest
+  ClickPatrol_* payload in first-party cookies (plus localStorage backup).
+- All Pages is enough. The ClickPatrol_.* trigger on this tag is optional.
 - Later All Pages fires replay the same dataLayer push without calling trck-002.
-- Hang the existing ClickPatrol_.* trigger on this tag as well as All Pages so
-  the store path can run. Without that trigger, behaviour stays as before.
 - A new click id (source, gclid, gbraid, wbraid, fbclid, msclkid, ttclid,
   li_fat_id, vd) always reclassifies.
