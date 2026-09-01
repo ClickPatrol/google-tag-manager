@@ -2478,7 +2478,6 @@ ___WEB_PERMISSIONS___
       "isEditedByUser": true
     },
     "isRequired": true
-  }
   },
   {
     "instance": {
@@ -2584,174 +2583,174 @@ scenarios:
 - name: Builds script URL with UID, page URL and a generated session id
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_10000000000000000000');
-      onSuccess();
+    assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_10000000000000000000');
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: Appends the page query string before the tracking params
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      if (component === 'query') {
-        return 'source=g&gclid=abc123&utm_source=google';
-      }
-      return 'https://example.com/page';
+    if (component === 'query') {
+    return 'source=g&gclid=abc123&utm_source=google';
+    }
+    return 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&source=g&gclid=abc123&utm_source=google&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_10000000000000000000');
-      onSuccess();
+    assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&source=g&gclid=abc123&utm_source=google&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_10000000000000000000');
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: Reuses the existing session id from the cookie
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      if (name === 'cp_session_id') { return ['cp_existing_session']; }
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_existing_session');
-      onSuccess();
+    assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_existing_session');
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: Reuses the existing visitor id from the cookie
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      if (name === 'cp_visitor_id') { return ['cp_existing_visitor']; }
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_visitor_id') { return ['cp_existing_visitor']; }
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_existing_visitor&session_id=cp_10000000000000000000');
-      onSuccess();
+    assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_existing_visitor&session_id=cp_10000000000000000000');
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: Falls back to the session id stored in localStorage
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function(key) {
-        return key === 'cp_session_id' ? 'cp_stored_session' : null;
-      },
-      setItem: function() {}
+    getItem: function(key) {
+    return key === 'cp_session_id' ? 'cp_stored_session' : null;
+    },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_stored_session');
-      onSuccess();
+    assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=TEST-UID-1234&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_stored_session');
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: URL-encodes the UID so unsafe characters cannot break the URL
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=unsafe%26value&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_10000000000000000000');
-      onSuccess();
+    assertThat(url).isEqualTo('https://trck-002.clckptrl.com/?uid=unsafe%26value&u=https%3A%2F%2Fexample.com%2Fpage&visitor_id=cp_10000000000000000000&session_id=cp_10000000000000000000');
+    onSuccess();
     });
     runCode({uid: 'unsafe&value'});
     assertApi('gtmOnSuccess').wasCalled();
 - name: Calls gtmOnFailure when the script fails to load
   code: |-
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function() {});
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onFailure();
+    onFailure();
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnFailure').wasCalled();
@@ -2759,30 +2758,30 @@ scenarios:
   code: |-
     let gclAwCookie = null;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_gcl_aw') {
-        gclAwCookie = value;
-      }
+    if (name === '_gcl_aw') {
+    gclAwCookie = value;
+    }
     });
     mock('getQueryParameters', function(key) {
-      if (key === 'vd') { return 'EAIaIQobCh-test'; }
-      return undefined;
+    if (key === 'vd') { return 'EAIaIQobCh-test'; }
+    return undefined;
     });
     mock('getUrl', function(component) {
-      return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
+    return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', enableGclidRecovery: true});
     assertThat(gclAwCookie).isEqualTo('GCL.1.EAIaIQobCh-test');
@@ -2790,28 +2789,28 @@ scenarios:
   code: |-
     let gclAwWritten = false;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_gcl_aw') { gclAwWritten = true; }
+    if (name === '_gcl_aw') { gclAwWritten = true; }
     });
     mock('getQueryParameters', function(key) {
-      if (key === 'vd') { return 'EAIaIQobCh-test'; }
-      return undefined;
+    if (key === 'vd') { return 'EAIaIQobCh-test'; }
+    return undefined;
     });
     mock('getUrl', function(component) {
-      return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
+    return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', enableGclidRecovery: false});
     assertThat(gclAwWritten).isEqualTo(false);
@@ -2819,29 +2818,29 @@ scenarios:
   code: |-
     let gclAwWritten = false;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_gcl_aw') { gclAwWritten = true; }
+    if (name === '_gcl_aw') { gclAwWritten = true; }
     });
     mock('getQueryParameters', function(key) {
-      if (key === 'gclid') { return 'realgclid'; }
-      if (key === 'vd') { return 'EAIaIQobCh-test'; }
-      return undefined;
+    if (key === 'gclid') { return 'realgclid'; }
+    if (key === 'vd') { return 'EAIaIQobCh-test'; }
+    return undefined;
     });
     mock('getUrl', function(component) {
-      return component === 'query' ? 'gclid=realgclid&vd=EAIaIQobCh-test' : 'https://example.com/page';
+    return component === 'query' ? 'gclid=realgclid&vd=EAIaIQobCh-test' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', enableGclidRecovery: true});
     assertThat(gclAwWritten).isEqualTo(false);
@@ -2849,29 +2848,29 @@ scenarios:
   code: |-
     let gclAwWritten = false;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      if (name === '_gcl_aw') { return ['GCL.123.existing']; }
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === '_gcl_aw') { return ['GCL.123.existing']; }
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_gcl_aw') { gclAwWritten = true; }
+    if (name === '_gcl_aw') { gclAwWritten = true; }
     });
     mock('getQueryParameters', function(key) {
-      if (key === 'vd') { return 'EAIaIQobCh-test'; }
-      return undefined;
+    if (key === 'vd') { return 'EAIaIQobCh-test'; }
+    return undefined;
     });
     mock('getUrl', function(component) {
-      return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
+    return component === 'query' ? 'vd=EAIaIQobCh-test' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', enableGclidRecovery: true});
     assertThat(gclAwWritten).isEqualTo(false);
@@ -2879,26 +2878,26 @@ scenarios:
   code: |-
     let fbpMaxAge = null;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      if (name === '_fbp') { return ['fb.1.123.456']; }
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === '_fbp') { return ['fb.1.123.456']; }
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_fbp') { fbpMaxAge = options['max-age']; }
+    if (name === '_fbp') { fbpMaxAge = options['max-age']; }
     });
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', extendFacebook: true});
     assertThat(fbpMaxAge).isEqualTo(90 * 24 * 60 * 60);
@@ -2906,26 +2905,26 @@ scenarios:
   code: |-
     let fbpWritten = false;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      if (name === '_fbp') { return ['fb.1.123.456']; }
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === '_fbp') { return ['fb.1.123.456']; }
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_fbp') { fbpWritten = true; }
+    if (name === '_fbp') { fbpWritten = true; }
     });
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', extendFacebook: false});
     assertThat(fbpWritten).isEqualTo(false);
@@ -2933,201 +2932,199 @@ scenarios:
   code: |-
     let scidWritten = false;
     mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
-      return [];
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    return [];
     });
     mockObject('localStorage', {
-      getItem: function() { return null; },
-      setItem: function() {}
+    getItem: function() { return null; },
+    setItem: function() {}
     });
     mock('generateRandom', function() { return 0; });
     mock('getTimestampMillis', function() { return 1000; });
     mock('setCookie', function(name, value, options) {
-      if (name === '_scid') { scidWritten = true; }
+    if (name === '_scid') { scidWritten = true; }
     });
     mock('getQueryParameters', function() {});
     mock('getUrl', function(component) {
-      return component === 'query' ? '' : 'https://example.com/page';
+    return component === 'query' ? '' : 'https://example.com/page';
     });
     mock('injectScript', function(url, onSuccess, onFailure) {
-      onSuccess();
+    onSuccess();
     });
     runCode({uid: 'TEST-UID-1234', extendSnapchat: true});
     assertThat(scidWritten).isEqualTo(false);
-
-
 - name: Replays a cached classification without loading the tracker
- code: |-
- mock('copyFromDataLayer', function() {});
- mock('createQueue', function() {
- return function(payload) {
- assertThat(payload.event).isEqualTo('ClickPatrol_Suspicious');
- assertThat(payload.traffic).isEqualTo('fake');
- assertThat(payload.audience.custom_audience_iphone).isEqualTo(false);
- assertThat(payload.audience.russia_exclusions).isEqualTo(false);
- assertThat(payload.audience.apple_gebruikers).isEqualTo(false);
- assertThat(payload.audience.legitieme_audience).isEqualTo(false);
- };
- });
- mock('getCookieValues', function(name) {
- if (name === 'cp_session_id') { return ['cp_existing_session']; }
- if (name === 'cp_class') { return ['1.S.f._session.rs']; }
- if (name === 'cp_audience') {
- return ['1._session.rs.%7B%22custom_audience_iphone%22%3Afalse%2C%22russia_exclusions%22%3Afalse%2C%22apple_gebruikers%22%3Afalse%2C%22legitieme_audience%22%3Afalse%7D'];
- }
- return [];
- });
- mockObject('localStorage', {
- getItem: function() { return null; },
- setItem: function() {},
- removeItem: function() {}
- });
- mock('generateRandom', function() { return 0; });
- mock('getTimestampMillis', function() { return 1000; });
- mock('setCookie', function() {});
- mock('getQueryParameters', function() {});
- mock('getUrl', function(component) {
- return component === 'query' ? '' : 'https://example.com/page';
- });
- let injected = false;
- mock('injectScript', function() { injected = true; });
- runCode({uid: 'TEST-UID-1234'});
- assertThat(injected).isEqualTo(false);
- assertApi('gtmOnSuccess').wasCalled();
+  code: |-
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() {
+    return function(payload) {
+    assertThat(payload.event).isEqualTo('ClickPatrol_Suspicious');
+    assertThat(payload.traffic).isEqualTo('fake');
+    assertThat(payload.audience.custom_audience_iphone).isEqualTo(false);
+    assertThat(payload.audience.russia_exclusions).isEqualTo(false);
+    assertThat(payload.audience.apple_gebruikers).isEqualTo(false);
+    assertThat(payload.audience.legitieme_audience).isEqualTo(false);
+    };
+    });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === 'cp_class') { return ['1.S.f._session.rs']; }
+    if (name === 'cp_audience') {
+    return ['1._session.rs.%7B%22custom_audience_iphone%22%3Afalse%2C%22russia_exclusions%22%3Afalse%2C%22apple_gebruikers%22%3Afalse%2C%22legitieme_audience%22%3Afalse%7D'];
+    }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function() { injected = true; });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(false);
+    assertApi('gtmOnSuccess').wasCalled();
 - name: Loads the tracker when a new click id is present even if cache exists
- code: |-
- mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
- if (name === 'cp_session_id') { return ['cp_existing_session']; }
- if (name === 'cp_class') { return ['1.S.f._session.rs']; }
- return [];
- });
- mockObject('localStorage', {
- getItem: function() { return null; },
- setItem: function() {},
- removeItem: function() {}
- });
- mock('generateRandom', function() { return 0; });
- mock('getTimestampMillis', function() { return 1000; });
- mock('setCookie', function() {});
- mock('getQueryParameters', function(key) {
- if (key === 'gclid') { return 'abc'; }
- });
- mock('getUrl', function(component) {
- return component === 'query' ? 'gclid=abc' : 'https://example.com/page';
- });
- let injected = false;
- mock('injectScript', function(url, onSuccess) {
- injected = true;
- onSuccess();
- });
- runCode({uid: 'TEST-UID-1234'});
- assertThat(injected).isEqualTo(true);
+  code: |-
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === 'cp_class') { return ['1.S.f._session.rs']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function(key) {
+    if (key === 'gclid') { return 'abc'; }
+    });
+    mock('getUrl', function(component) {
+    return component === 'query' ? 'gclid=abc' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function(url, onSuccess) {
+    injected = true;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(true);
 - name: Stores classification and audience from the dataLayer on a ClickPatrol event
- code: |-
- let classValue = null;
- let audienceValue = null;
- mock('copyFromDataLayer', function(key) {
- if (key === 'event') { return 'ClickPatrol_Suspicious'; }
- if (key === 'traffic') { return 'fake'; }
- if (key === 'audience') {
- return {
- custom_audience_iphone: false,
- russia_exclusions: false,
- apple_gebruikers: false,
- legitieme_audience: false
- };
- }
- });
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
- if (name === 'cp_session_id') { return ['cp_existing_session']; }
- return [];
- });
- mockObject('localStorage', {
- getItem: function() { return null; },
- setItem: function() {},
- removeItem: function() {}
- });
- mock('generateRandom', function() { return 0; });
- mock('getTimestampMillis', function() { return 1000; });
- mock('setCookie', function(name, value) {
- if (name === 'cp_class') { classValue = value; }
- if (name === 'cp_audience') { audienceValue = value; }
- });
- mock('getQueryParameters', function() {});
- mock('getUrl', function(component) {
- return component === 'query' ? '' : 'https://example.com/page';
- });
- let injected = false;
- mock('injectScript', function() { injected = true; });
- runCode({uid: 'TEST-UID-1234'});
- assertThat(injected).isEqualTo(false);
- assertThat(classValue).isEqualTo('1.S.f._session.rs');
- assertThat(audienceValue.indexOf('1._session.rs.')).isEqualTo(0);
- assertApi('gtmOnSuccess').wasCalled();
+  code: |-
+    let classValue = null;
+    let audienceValue = null;
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Suspicious'; }
+    if (key === 'traffic') { return 'fake'; }
+    if (key === 'audience') {
+    return {
+    custom_audience_iphone: false,
+    russia_exclusions: false,
+    apple_gebruikers: false,
+    legitieme_audience: false
+    };
+    }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function(name, value) {
+    if (name === 'cp_class') { classValue = value; }
+    if (name === 'cp_audience') { audienceValue = value; }
+    });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function() { injected = true; });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(false);
+    assertThat(classValue).isEqualTo('1.S.f._session.rs');
+    assertThat(audienceValue.indexOf('1._session.rs.')).isEqualTo(0);
+    assertApi('gtmOnSuccess').wasCalled();
 - name: Replays the event without audience when the audience store is corrupt
- code: |-
- let pushed = null;
- mock('copyFromDataLayer', function() {});
- mock('createQueue', function() {
- return function(payload) { pushed = payload; };
- });
- mock('getCookieValues', function(name) {
- if (name === 'cp_session_id') { return ['cp_existing_session']; }
- if (name === 'cp_class') { return ['1.L.s._session.rs']; }
- if (name === 'cp_audience') { return ['not-a-valid-store']; }
- return [];
- });
- mockObject('localStorage', {
- getItem: function() { return null; },
- setItem: function() {},
- removeItem: function() {}
- });
- mock('generateRandom', function() { return 0; });
- mock('getTimestampMillis', function() { return 1000; });
- mock('setCookie', function() {});
- mock('getQueryParameters', function() {});
- mock('getUrl', function(component) {
- return component === 'query' ? '' : 'https://example.com/page';
- });
- let injected = false;
- mock('injectScript', function() { injected = true; });
- runCode({uid: 'TEST-UID-1234'});
- assertThat(injected).isEqualTo(false);
- assertThat(pushed.event).isEqualTo('ClickPatrol_Legitimate');
- assertThat(pushed.traffic).isEqualTo('safe');
- assertThat(pushed.audience).isEqualTo(undefined);
+  code: |-
+    let pushed = null;
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() {
+    return function(payload) { pushed = payload; };
+    });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === 'cp_class') { return ['1.L.s._session.rs']; }
+    if (name === 'cp_audience') { return ['not-a-valid-store']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function() { injected = true; });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(false);
+    assertThat(pushed.event).isEqualTo('ClickPatrol_Legitimate');
+    assertThat(pushed.traffic).isEqualTo('safe');
+    assertThat(pushed.audience).isEqualTo(undefined);
 - name: Loads the tracker when classification is missing and leaves audience stored
- code: |-
- mock('copyFromDataLayer', function() {});
- mock('createQueue', function() { return function() {}; });
- mock('getCookieValues', function(name) {
- if (name === 'cp_session_id') { return ['cp_existing_session']; }
- if (name === 'cp_audience') { return ['1._session.rs.%7B%22vip_eu%22%3Atrue%7D']; }
- return [];
- });
- mockObject('localStorage', {
- getItem: function() { return null; },
- setItem: function() {},
- removeItem: function() {}
- });
- mock('generateRandom', function() { return 0; });
- mock('getTimestampMillis', function() { return 1000; });
- mock('setCookie', function() {});
- mock('getQueryParameters', function() {});
- mock('getUrl', function(component) {
- return component === 'query' ? '' : 'https://example.com/page';
- });
- let injected = false;
- mock('injectScript', function(url, onSuccess) {
- injected = true;
- onSuccess();
- });
- runCode({uid: 'TEST-UID-1234'});
- assertThat(injected).isEqualTo(true);
+  code: |-
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === 'cp_audience') { return ['1._session.rs.%7B%22vip_eu%22%3Atrue%7D']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function(url, onSuccess) {
+    injected = true;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(true);
 
 ___NOTES___
 
