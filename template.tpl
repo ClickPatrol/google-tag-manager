@@ -283,18 +283,55 @@ function sessionSuffix(id) {
   return id.substring(id.length - 8, id.length);
 }
 
-function hasNewClickId() {
+function clickFingerprint() {
+  let out = '';
   for (let i = 0; i < CLICK_KEYS.length; i++) {
     const value = getQueryParameters(CLICK_KEYS[i]);
     if (value) {
-      return true;
+      if (out) {
+        out = out + '&';
+      }
+      out = out + CLICK_KEYS[i] + '=' + value;
     }
   }
-  return false;
+  return out;
+}
+
+function hashFingerprint(fp) {
+  let h = 7;
+  for (let i = 0; i < fp.length; i++) {
+    const ch = fp.charAt(i);
+    let v = B36.indexOf(ch.toLowerCase());
+    if (v < 0) {
+      if (ch === '=') {
+        v = 37;
+      } else if (ch === '&') {
+        v = 38;
+      } else if (ch === '-') {
+        v = 39;
+      } else if (ch === '_') {
+        v = 40;
+      } else if (ch === '.') {
+        v = 41;
+      } else {
+        v = 42;
+      }
+    }
+    h = h * 33 + v + i;
+    if (h > 2000000000) {
+      h = h - Math.floor(h / 1000000000) * 1000000000;
+    }
+  }
+  return toBase36(h);
 }
 
 function encodeClass(kind, trafficCode, sessId, ts) {
-  return SCHEMA + '.' + kind + '.' + trafficCode + '.' + sessionSuffix(sessId) + '.' + toBase36(ts);
+  let value = SCHEMA + '.' + kind + '.' + trafficCode + '.' + sessionSuffix(sessId) + '.' + toBase36(ts);
+  const fp = clickFingerprint();
+  if (fp) {
+    value = value + '.' + hashFingerprint(fp);
+  }
+  return value;
 }
 
 function parseClass(raw, sessId) {
@@ -302,7 +339,7 @@ function parseClass(raw, sessId) {
     return null;
   }
   const parts = raw.split('.');
-  if (parts.length !== 5) {
+  if (parts.length !== 5 && parts.length !== 6) {
     return null;
   }
   if (parts[0] !== SCHEMA) {
@@ -326,7 +363,8 @@ function parseClass(raw, sessId) {
     trafficCode: trafficCode,
     event: kind === 'L' ? 'ClickPatrol_Legitimate' : 'ClickPatrol_Suspicious',
     traffic: trafficCode === 's' ? 'safe' : 'fake',
-    ts: ts
+    ts: ts,
+    clickHash: parts.length === 6 ? parts[5] : ''
   };
 }
 
@@ -344,6 +382,18 @@ function readClass(sessId) {
     lsRemove(CLASS_KEY);
   }
   return null;
+}
+
+function hasNewClickId(sessId) {
+  const fp = clickFingerprint();
+  if (!fp) {
+    return false;
+  }
+  const parsed = readClass(sessId);
+  if (!parsed || !parsed.clickHash) {
+    return true;
+  }
+  return parsed.clickHash !== hashFingerprint(fp);
 }
 
 function writeClassValue(value) {
@@ -602,7 +652,7 @@ const currentEvent = copyFromDataLayer('event');
 if (currentEvent && currentEvent.indexOf('ClickPatrol_') === 0) {
   storeFromDataLayer(sessionId);
   data.gtmOnSuccess();
-} else if (!hasNewClickId() && replayFromCache(sessionId)) {
+} else if (!hasNewClickId(sessionId) && replayFromCache(sessionId)) {
   data.gtmOnSuccess();
 } else {
   const uid = encodeUriComponent(data.uid);
@@ -3065,6 +3115,70 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertThat(injected).isEqualTo(true);
+- name: Replays when the click id matches the hash stored in cp_class
+  code: |-
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() {
+    return function(payload) {
+    assertThat(payload.event).isEqualTo('ClickPatrol_Suspicious');
+    assertThat(payload.traffic).isEqualTo('fake');
+    };
+    });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === 'cp_class') { return ['1.S.f._session.rs.8j2i1t']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function(key) {
+    if (key === 'gclid') { return 'abc'; }
+    });
+    mock('getUrl', function(component) {
+    return component === 'query' ? 'gclid=abc' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function() { injected = true; });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(false);
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Loads the tracker when source changes from g to f
+  code: |-
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === 'cp_class') { return ['1.S.f._session.rs.cfomrj']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function(key) {
+    if (key === 'source') { return 'f'; }
+    });
+    mock('getUrl', function(component) {
+    return component === 'query' ? 'source=f' : 'https://example.com/page';
+    });
+    let injected = false;
+    mock('injectScript', function(url, onSuccess) {
+    injected = true;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(true);
 - name: Stores classification and audience from the dataLayer on a ClickPatrol event
   code: |-
     let classValue = null;
@@ -3224,5 +3338,7 @@ Classification cache (cp_class + cp_audience):
   ClickPatrol_* payload in first-party cookies (plus localStorage backup).
 - All Pages is enough. The ClickPatrol_.* trigger on this tag is optional.
 - Later All Pages fires replay the same dataLayer push without calling trck-002.
-- A new click id (source, gclid, gbraid, wbraid, fbclid, msclkid, ttclid,
-  li_fat_id, vd) always reclassifies.
+- A click id in the URL (source, gclid, gbraid, wbraid, fbclid, msclkid,
+  ttclid, li_fat_id, vd) reclassifies only when it differs from the hash
+  stored on cp_class. The same source or gclid replays. A 5-part cache
+  without a hash still reclassifies once, then stores the hash.

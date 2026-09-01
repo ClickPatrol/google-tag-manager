@@ -18,10 +18,15 @@ Each store has a localStorage key of the same name. Write localStorage only when
 ## `cp_class`
 
 ```
-1.<L|S>.<s|f>.<last8 of session id>.<timestamp base36>
+1.<L|S>.<s|f>.<last8 of session id>.<timestamp base36>[.<click hash>]
 ```
 
 Example for Suspicious / fake: `1.S.f._session.rs`
+
+When the page URL has a click id, a sixth field is the hash of those
+values (stable key order: `source`, `gclid`, `gbraid`, `wbraid`,
+`fbclid`, `msclkid`, `ttclid`, `li_fat_id`, `vd`). Example with
+`gclid=abc`: `1.S.f._session.rs.8j2i1t`
 
 Hard limit: 64 bytes. Never includes audience data.
 
@@ -43,7 +48,7 @@ Cookie is written only when the encoded value is at most 512 bytes. Larger objec
 
 - Session suffix mismatch
 - Age over 24 hours
-- New click id in the URL: `source`, `gclid`, `gbraid`, `wbraid`, `fbclid`, `msclkid`, `ttclid`, `li_fat_id`, `vd`
+- Click id in the URL (`source`, `gclid`, `gbraid`, `wbraid`, `fbclid`, `msclkid`, `ttclid`, `li_fat_id`, `vd`) whose fingerprint differs from the hash on `cp_class`. The same values replay. A 5-part store without a hash still refetches once.
 
 Cookie TTL is refreshed at most once per hour. localStorage is not rewritten on that refresh.
 
