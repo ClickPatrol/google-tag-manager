@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: 9664b971fe6195c6fce718d2652be3f6a1e77bf3
+    changeNotes: Reuse ClickPatrol event, traffic and audience on later pages from first-party cookies, without calling the tracker again.
   - sha: 5fffcc52e51b9ff006a772c6adf6c981ed0bd64e
     changeNotes: updated visitor tracking
   - sha: f3c67349497232a58a9a0d1f88f9d2621c2c0c84
