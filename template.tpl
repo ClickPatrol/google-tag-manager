@@ -168,7 +168,7 @@ const getQueryParameters = require('getQueryParameters');
 const copyFromDataLayer = require('copyFromDataLayer');
 const copyFromWindow = require('copyFromWindow');
 const setInWindow = require('setInWindow');
-const callInWindow = require('callInWindow');
+const callLater = require('callLater');
 const createQueue = require('createQueue');
 const getType = require('getType');
 const JSON = require('JSON');
@@ -845,11 +845,13 @@ function startConversionWatch(sessId) {
     seen = len;
   };
   scan();
+  // callLater is the sandbox timer (setTimeout 0). window.setTimeout is a
+  // predefined global, so access_globals will not accept that key.
   const tick = function() {
     scan();
-    callInWindow('setTimeout', tick, 400);
+    callLater(tick);
   };
-  callInWindow('setTimeout', tick, 400);
+  callLater(tick);
 }
 
 const visitorId = readOrCreateId(VISITOR_KEY, VISITOR_TTL_SECONDS);
@@ -2932,45 +2934,6 @@ ___WEB_PERMISSIONS___
                 "mapValue": [
                   {
                     "type": 1,
-                    "string": "setTimeout"
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  },
-                  {
-                    "type": 8,
-                    "boolean": true
-                  }
-                ]
-              },
-              {
-                "type": 3,
-                "mapKey": [
-                  {
-                    "type": 1,
-                    "string": "key"
-                  },
-                  {
-                    "type": 1,
-                    "string": "read"
-                  },
-                  {
-                    "type": 1,
-                    "string": "write"
-                  },
-                  {
-                    "type": 1,
-                    "string": "execute"
-                  }
-                ],
-                "mapValue": [
-                  {
-                    "type": 1,
                     "string": "_cpConvWatch"
                   },
                   {
@@ -4158,7 +4121,7 @@ scenarios:
     return [];
     });
     mock('setInWindow', function() {});
-    mock('callInWindow', function() {});
+    mock('callLater', function() {});
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -4204,9 +4167,7 @@ scenarios:
     });
     mock('setInWindow', function() {});
     let laterTick = null;
-    mock('callInWindow', function(name, fn) {
-    if (name === 'setTimeout') { laterTick = fn; }
-    });
+    mock('callLater', function(fn) { laterTick = fn; });
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -4254,7 +4215,6 @@ scenarios:
     return [];
     });
     mock('setInWindow', function() {});
-    mock('callInWindow', function() {});
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -4286,7 +4246,6 @@ scenarios:
     mock('createQueue', function() { return function() {}; });
     mock('copyFromWindow', function() { return []; });
     mock('setInWindow', function() {});
-    mock('callInWindow', function() {});
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -4354,8 +4313,9 @@ Conversion pixel (ClickPatrol_Conversion):
 - Both guards are written before injectScript, not in its callback. Injecting
   is async, so marking afterwards left a window where a second reader passed
   the check. A pixel that fails to load is therefore not retried.
-- The watch scans window.dataLayer on a 400ms setTimeout loop. The sandbox has
-  no dataLayer listener API (addEventCallback is per-event tag monitoring and
-  callLater is setTimeout 0), so a scan is the only zero-config option. Cost:
-  up to 400ms extra latency and a timer for the page lifetime. Use the Custom
-  Event trigger when that latency matters.
+- The watch scans window.dataLayer, then reschedules itself with callLater
+  (the sandbox timer). window.setTimeout is a predefined global and is not
+  allowed in access_globals. The sandbox has no dataLayer listener API
+  (addEventCallback is per-event tag monitoring). Cost: a callLater loop for
+  the page lifetime. Use the Custom Event trigger when you want the send on
+  the push itself instead of on the next turn.

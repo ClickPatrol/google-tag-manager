@@ -44,7 +44,7 @@ function makeEnv(world, opts) {
       world.win[k] = v;
       return true;
     },
-    callInWindow: (name, fn, ms) => { if (name === 'setTimeout') world.timers.push(fn); },
+    callLater: (fn) => { world.timers.push(fn); },
     createQueue: () => (o) => world.win.dataLayer.push(o),
     getType: gtmType,
     JSON: JSON,

@@ -99,9 +99,9 @@ A trial without a Google Ads action can omit `conversion_label`.
 
 Optional, for the fastest path: also fire this tag on a Custom Event
 trigger named `ClickPatrol_Conversion`. That sends the conversion on the
-push itself instead of on the next scan, up to 400ms earlier. Running both
-routes is safe, because the tag claims each `conversion_id` once per page
-load and once per session.
+push itself instead of on the next watch turn. Running both routes is
+safe, because the tag claims each `conversion_id` once per page load and
+once per session.
 
 Find the Google Ads label under Tools > Conversions > the conversion
 action > Tag setup. It is the second part of `AW-XXXXXXX/LABEL`.
