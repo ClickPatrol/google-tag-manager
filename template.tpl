@@ -167,6 +167,8 @@ const getTimestampMillis = require('getTimestampMillis');
 const getQueryParameters = require('getQueryParameters');
 const copyFromDataLayer = require('copyFromDataLayer');
 const copyFromWindow = require('copyFromWindow');
+const setInWindow = require('setInWindow');
+const callInWindow = require('callInWindow');
 const createQueue = require('createQueue');
 const getType = require('getType');
 const JSON = require('JSON');
@@ -658,8 +660,18 @@ function stripFbc(raw) {
   return out;
 }
 
-function clickFromOverrideUrlOrCookie(param, cookieName, stripFn) {
-  const fromLayer = asString(copyFromDataLayer(param));
+function fieldFrom(item, key) {
+  if (item) {
+    const fromItem = asString(item[key]);
+    if (fromItem) {
+      return fromItem;
+    }
+  }
+  return asString(copyFromDataLayer(key));
+}
+
+function clickFromOverrideUrlOrCookie(param, cookieName, stripFn, item) {
+  const fromLayer = fieldFrom(item, param);
   if (fromLayer) {
     return fromLayer;
   }
@@ -727,46 +739,88 @@ function appendQuery(url, key, value) {
   return url + '&' + key + '=' + encodeUriComponent(value);
 }
 
-function sendConversion(sessId) {
-  const convId = asString(copyFromDataLayer('conversion_id'));
-  const wireType = mapConversionType(copyFromDataLayer('conversion_type'));
+function sendConversion(sessId, item, fromWatch) {
+  const convId = asString(fieldFrom(item, 'conversion_id'));
+  const wireType = mapConversionType(fieldFrom(item, 'conversion_type'));
   if (!convId || !wireType) {
-    data.gtmOnSuccess();
+    if (!fromWatch) {
+      data.gtmOnSuccess();
+    }
     return;
   }
 
   const dedupeOn = data.dedupeConversions !== false;
   if (dedupeOn && conversionAlreadySent(sessId, convId)) {
-    data.gtmOnSuccess();
+    if (!fromWatch) {
+      data.gtmOnSuccess();
+    }
     return;
   }
 
   let url = 'https://conversion.clckptrl.com/?uid=' + encodeUriComponent(data.uid);
   url = appendQuery(url, 'conversion_id', convId);
-  url = appendQuery(url, 'conversion_label', asString(copyFromDataLayer('conversion_label')));
-  url = appendQuery(url, 'conversion_value', asString(copyFromDataLayer('conversion_value')));
-  url = appendQuery(url, 'conversion_currency', asString(copyFromDataLayer('conversion_currency')));
+  url = appendQuery(url, 'conversion_label', asString(fieldFrom(item, 'conversion_label')));
+  url = appendQuery(url, 'conversion_value', asString(fieldFrom(item, 'conversion_value')));
+  url = appendQuery(url, 'conversion_currency', asString(fieldFrom(item, 'conversion_currency')));
   url = appendQuery(url, 'conversion_type', wireType);
-  url = appendQuery(url, 'gclid', clickFromOverrideUrlOrCookie('gclid', '_gcl_aw', stripGclAw));
-  url = appendQuery(url, 'gbraid', clickFromOverrideUrlOrCookie('gbraid', '', null));
-  url = appendQuery(url, 'wbraid', clickFromOverrideUrlOrCookie('wbraid', '', null));
-  url = appendQuery(url, 'msclkid', clickFromOverrideUrlOrCookie('msclkid', '_uetmsclkid', null));
-  url = appendQuery(url, 'fbclid', clickFromOverrideUrlOrCookie('fbclid', '_fbc', stripFbc));
-  url = appendQuery(url, 'ttclid', clickFromOverrideUrlOrCookie('ttclid', 'ttclid', null));
-  url = appendQuery(url, 'li_fat_id', clickFromOverrideUrlOrCookie('li_fat_id', 'li_fat_id', null));
-  url = appendQuery(url, 'twclid', clickFromOverrideUrlOrCookie('twclid', '', null));
-  url = appendQuery(url, 'epik', clickFromOverrideUrlOrCookie('epik', '_epik', null));
-  url = appendQuery(url, 'scclid', clickFromOverrideUrlOrCookie('scclid', '_scclid', null));
-  url = appendQuery(url, 'qclid', clickFromOverrideUrlOrCookie('qclid', '', null));
-  url = appendQuery(url, 'obclid', clickFromOverrideUrlOrCookie('obclid', '', null));
-  url = appendQuery(url, 'tblci', clickFromOverrideUrlOrCookie('tblci', '', null));
+  url = appendQuery(url, 'gclid', clickFromOverrideUrlOrCookie('gclid', '_gcl_aw', stripGclAw, item));
+  url = appendQuery(url, 'gbraid', clickFromOverrideUrlOrCookie('gbraid', '', null, item));
+  url = appendQuery(url, 'wbraid', clickFromOverrideUrlOrCookie('wbraid', '', null, item));
+  url = appendQuery(url, 'msclkid', clickFromOverrideUrlOrCookie('msclkid', '_uetmsclkid', null, item));
+  url = appendQuery(url, 'fbclid', clickFromOverrideUrlOrCookie('fbclid', '_fbc', stripFbc, item));
+  url = appendQuery(url, 'ttclid', clickFromOverrideUrlOrCookie('ttclid', 'ttclid', null, item));
+  url = appendQuery(url, 'li_fat_id', clickFromOverrideUrlOrCookie('li_fat_id', 'li_fat_id', null, item));
+  url = appendQuery(url, 'twclid', clickFromOverrideUrlOrCookie('twclid', '', null, item));
+  url = appendQuery(url, 'epik', clickFromOverrideUrlOrCookie('epik', '_epik', null, item));
+  url = appendQuery(url, 'scclid', clickFromOverrideUrlOrCookie('scclid', '_scclid', null, item));
+  url = appendQuery(url, 'qclid', clickFromOverrideUrlOrCookie('qclid', '', null, item));
+  url = appendQuery(url, 'obclid', clickFromOverrideUrlOrCookie('obclid', '', null, item));
+  url = appendQuery(url, 'tblci', clickFromOverrideUrlOrCookie('tblci', '', null, item));
 
   injectScript(url, function() {
     if (dedupeOn) {
       rememberConversion(sessId, convId);
     }
-    data.gtmOnSuccess();
-  }, data.gtmOnFailure);
+    if (!fromWatch) {
+      data.gtmOnSuccess();
+    }
+  }, fromWatch ? function() {} : data.gtmOnFailure);
+}
+
+function dataLayerLength(dl) {
+  if (!dl) {
+    return 0;
+  }
+  const kind = getType(dl);
+  if (kind !== 'array' && kind !== 'object') {
+    return 0;
+  }
+  return dl.length ? dl.length : 0;
+}
+
+function startConversionWatch(sessId) {
+  if (copyFromWindow('_cpConvWatch')) {
+    return;
+  }
+  setInWindow('_cpConvWatch', true, false);
+  let seen = 0;
+  const scan = function() {
+    const dl = copyFromWindow('dataLayer');
+    const len = dataLayerLength(dl);
+    for (let i = seen; i < len; i++) {
+      const item = dl[i];
+      if (item && getType(item) === 'object' && item.event === 'ClickPatrol_Conversion') {
+        sendConversion(sessId, item, true);
+      }
+    }
+    seen = len;
+  };
+  scan();
+  const tick = function() {
+    scan();
+    callInWindow('setTimeout', tick, 400);
+  };
+  callInWindow('setTimeout', tick, 400);
 }
 
 const visitorId = readOrCreateId(VISITOR_KEY, VISITOR_TTL_SECONDS);
@@ -828,29 +882,32 @@ for (let g = 0; g < extendGroups.length; g++) {
 
 const currentEvent = copyFromDataLayer('event');
 if (currentEvent === 'ClickPatrol_Conversion') {
-  sendConversion(sessionId);
-} else if (currentEvent && currentEvent.indexOf('ClickPatrol_') === 0) {
-  storeFromDataLayer(sessionId);
-  data.gtmOnSuccess();
-} else if (!hasNewClickId(sessionId) && replayFromCache(sessionId)) {
-  data.gtmOnSuccess();
+  sendConversion(sessionId, null, false);
 } else {
-  const uid = encodeUriComponent(data.uid);
-  const pageQuery = getUrl('query');
-  const pageHref = getUrl('href');
-
-  let scriptUrl = 'https://trck-002.clckptrl.com/?uid=' + uid;
-  if (pageQuery) {
-    scriptUrl = scriptUrl + '&' + pageQuery;
-  }
-  scriptUrl = scriptUrl + '&u=' + encodeUriComponent(pageHref);
-  scriptUrl = scriptUrl + '&visitor_id=' + encodeUriComponent(visitorId);
-  scriptUrl = scriptUrl + '&session_id=' + encodeUriComponent(sessionId);
-
-  injectScript(scriptUrl, function () {
-    storeLatestFromWindow(sessionId);
+  startConversionWatch(sessionId);
+  if (currentEvent && currentEvent.indexOf('ClickPatrol_') === 0) {
+    storeFromDataLayer(sessionId);
     data.gtmOnSuccess();
-  }, data.gtmOnFailure);
+  } else if (!hasNewClickId(sessionId) && replayFromCache(sessionId)) {
+    data.gtmOnSuccess();
+  } else {
+    const uid = encodeUriComponent(data.uid);
+    const pageQuery = getUrl('query');
+    const pageHref = getUrl('href');
+
+    let scriptUrl = 'https://trck-002.clckptrl.com/?uid=' + uid;
+    if (pageQuery) {
+      scriptUrl = scriptUrl + '&' + pageQuery;
+    }
+    scriptUrl = scriptUrl + '&u=' + encodeUriComponent(pageHref);
+    scriptUrl = scriptUrl + '&visitor_id=' + encodeUriComponent(visitorId);
+    scriptUrl = scriptUrl + '&session_id=' + encodeUriComponent(sessionId);
+
+    injectScript(scriptUrl, function () {
+      storeLatestFromWindow(sessionId);
+      data.gtmOnSuccess();
+    }, data.gtmOnFailure);
+  }
 }
 
 
@@ -2822,6 +2879,84 @@ ___WEB_PERMISSIONS___
                     "boolean": false
                   }
                 ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "setTimeout"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_cpConvWatch"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
               }
             ]
           }
@@ -3937,6 +4072,107 @@ scenarios:
     assertThat(injected).isEqualTo(false);
     assertThat(classValue).isEqualTo('1.L.s._session.rs');
     assertApi('gtmOnSuccess').wasCalled();
+- name: All Pages sends a conversion already present in the dataLayer
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'gtm.js'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === '_cpConvWatch') { return false; }
+    if (name === 'dataLayer') {
+    return [{
+    event: 'ClickPatrol_Conversion',
+    conversion_id: 'order_10042',
+    conversion_type: 'purchase'
+    }];
+    }
+    return [];
+    });
+    mock('setInWindow', function() {});
+    mock('callInWindow', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let urls = [];
+    mock('injectScript', function(url, onSuccess) {
+    urls.push(url);
+    if (onSuccess) { onSuccess(); }
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    let conversionUrl = '';
+    let trackerUrl = '';
+    for (let i = 0; i < urls.length; i++) {
+    if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
+    if (urls[i].indexOf('trck-002.clckptrl.com') !== -1) { trackerUrl = urls[i]; }
+    }
+    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_10042&conversion_type=TRANSACTION');
+    assertThat(trackerUrl.indexOf('https://trck-002.clckptrl.com/')).isEqualTo(0);
+    assertApi('gtmOnSuccess').wasCalled();
+- name: All Pages sends a conversion pushed after the first fire
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'gtm.js'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    let dl = [{ event: 'gtm.js' }];
+    mock('copyFromWindow', function(name) {
+    if (name === '_cpConvWatch') { return false; }
+    if (name === 'dataLayer') { return dl; }
+    return [];
+    });
+    mock('setInWindow', function() {});
+    let laterTick = null;
+    mock('callInWindow', function(name, fn) {
+    if (name === 'setTimeout') { laterTick = fn; }
+    });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let urls = [];
+    mock('injectScript', function(url, onSuccess) {
+    urls.push(url);
+    if (onSuccess) { onSuccess(); }
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    dl.push({
+    event: 'ClickPatrol_Conversion',
+    conversion_id: 'later_lead',
+    conversion_type: 'lead'
+    });
+    laterTick();
+    let conversionUrl = '';
+    for (let i = 0; i < urls.length; i++) {
+    if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
+    }
+    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=later_lead&conversion_type=LEAD');
+    assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
 
@@ -3962,10 +4198,10 @@ Classification cache (cp_class + cp_audience):
   without a hash still reclassifies once, then stores the hash.
 
 Conversion pixel (ClickPatrol_Conversion):
-- Fire this tag on a Custom Event trigger named ClickPatrol_Conversion as
-  well as All Pages. The site pushes conversion_id, conversion_type
-  (lead or purchase), optional conversion_label (Google Ads label),
-  and optional value/currency.
+- All Pages is enough. The first fire installs a dataLayer watch, so a
+  later ClickPatrol_Conversion push is sent without a second trigger.
+- The site pushes conversion_id, conversion_type (lead or purchase),
+  optional conversion_label (Google Ads label), and optional value/currency.
 - The tag maps lead to LEAD and purchase to TRANSACTION, fills click ids
   from the URL or first-party ad cookies, and loads
   https://conversion.clckptrl.com/. It does not call trck-002 on this event.

@@ -3,7 +3,7 @@
 Google Tag Manager template for ClickPatrol traffic quality.
 
 The same tag also sends conversions when it sees a `ClickPatrol_Conversion`
-dataLayer event. Add a Custom Event trigger with that name, next to All Pages.
+dataLayer event. All Pages is enough. Do not add a second trigger.
 
 Do not use a separate Custom HTML conversion snippet.
 
@@ -92,10 +92,9 @@ A trial without a Google Ads action can omit `conversion_label`.
 
 ## GTM setup
 
-1. Keep the ClickPatrol Ad Traffic Quality tag.
-2. Add a Custom Event trigger, event name `ClickPatrol_Conversion`.
-3. Attach that trigger to the same tag, next to All Pages.
-4. Let your purchase / lead tag push the event above, or add a small
+1. Keep the ClickPatrol Ad Traffic Quality tag on All Pages. That one
+   fire also watches for later `ClickPatrol_Conversion` pushes.
+2. Let your purchase / lead tag push the event above, or add a small
    Custom HTML tag on those same triggers that only does the push.
 
 Find the Google Ads label under Tools > Conversions > the conversion
