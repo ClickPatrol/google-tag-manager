@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: 8ca7ef55372f8a4660dacce9baaaf6fb66de84fe
+    changeNotes: Use the sandbox callLater timer. window.setTimeout is a reserved global and cannot be listed in access_globals.
   - sha: 179ac4e38cd0386f4304fd9695f3034532bdd376
     changeNotes: Claim each conversion_id once per page and per session, so an optional Custom Event trigger cannot send the same conversion twice.
   - sha: ff8335adccbef888ab9d143dbfd8203e050d1259
