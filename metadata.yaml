@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: 362cc9ae76cb0f342dd1aa85ee7a0ea52c3d7a3b
+    changeNotes: Send conversions from the same tag on ClickPatrol_Conversion. Fill click ids from the URL or first-party ad cookies.
   - sha: 518eb189d597112a49c6c2518a1543d32ea913e2
     changeNotes: Replay the cached classification when the same click id returns. Fetch the tracker again when source or gclid changes.
   - sha: 5fffcc52e51b9ff006a772c6adf6c981ed0bd64e
