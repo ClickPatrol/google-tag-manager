@@ -742,7 +742,8 @@ function sendConversion(sessId) {
   }
 
   let url = 'https://conversion.clckptrl.com/?uid=' + encodeUriComponent(data.uid);
-  url = appendQuery(url, 'conversion_label', convId);
+  url = appendQuery(url, 'conversion_id', convId);
+  url = appendQuery(url, 'conversion_label', asString(copyFromDataLayer('conversion_label')));
   url = appendQuery(url, 'conversion_value', asString(copyFromDataLayer('conversion_value')));
   url = appendQuery(url, 'conversion_currency', asString(copyFromDataLayer('conversion_currency')));
   url = appendQuery(url, 'conversion_type', wireType);
@@ -2862,6 +2863,10 @@ ___WEB_PERMISSIONS___
               },
               {
                 "type": 1,
+                "string": "conversion_label"
+              },
+              {
+                "type": 1,
                 "string": "conversion_type"
               },
               {
@@ -3632,13 +3637,14 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_label=trial_started&conversion_type=LEAD');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
     assertApi('gtmOnSuccess').wasCalled();
-- name: Sends a purchase conversion with value and currency
+- name: Sends a purchase conversion with value, currency and Google Ads label
   code: |-
     mock('copyFromDataLayer', function(key) {
     if (key === 'event') { return 'ClickPatrol_Conversion'; }
     if (key === 'conversion_id') { return 'order_99'; }
+    if (key === 'conversion_label') { return 'AbCdEfGhIjk'; }
     if (key === 'conversion_type') { return 'purchase'; }
     if (key === 'conversion_value') { return 149.95; }
     if (key === 'conversion_currency') { return 'EUR'; }
@@ -3667,7 +3673,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_label=order_99&conversion_value=149.95&conversion_currency=EUR&conversion_type=TRANSACTION');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_99&conversion_label=AbCdEfGhIjk&conversion_value=149.95&conversion_currency=EUR&conversion_type=TRANSACTION');
     assertApi('gtmOnSuccess').wasCalled();
 - name: Ignores an unknown conversion_type
   code: |-
@@ -3762,7 +3768,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_label=trial_started&conversion_type=LEAD&gclid=urlclid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gclid=urlclid');
 - name: Fills gclid from _gcl_aw and strips the GCL prefix
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -3795,7 +3801,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_label=trial_started&conversion_type=LEAD&gclid=cookieclid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gclid=cookieclid');
 - name: Fills fbclid from _fbc and strips the fb prefix
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -3828,7 +3834,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_label=trial_started&conversion_type=LEAD&fbclid=fbclidvalue');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&fbclid=fbclidvalue');
 - name: Omits empty conversion and click-id parameters
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -3862,8 +3868,9 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_label=trial_started&conversion_type=LEAD');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
     assertThat(injected.indexOf('conversion_value')).isEqualTo(-1);
+    assertThat(injected.indexOf('conversion_label')).isEqualTo(-1);
     assertThat(injected.indexOf('gclid=')).isEqualTo(-1);
 - name: Does not fire the same conversion_id twice in one session
   code: |-
@@ -3957,7 +3964,8 @@ Classification cache (cp_class + cp_audience):
 Conversion pixel (ClickPatrol_Conversion):
 - Fire this tag on a Custom Event trigger named ClickPatrol_Conversion as
   well as All Pages. The site pushes conversion_id, conversion_type
-  (lead or purchase), and optional value/currency.
+  (lead or purchase), optional conversion_label (Google Ads label),
+  and optional value/currency.
 - The tag maps lead to LEAD and purchase to TRANSACTION, fills click ids
   from the URL or first-party ad cookies, and loads
   https://conversion.clckptrl.com/. It does not call trck-002 on this event.

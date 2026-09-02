@@ -17,12 +17,20 @@ first-party ad cookies.
 window.dataLayer = window.dataLayer || [];
 window.dataLayer.push({
   event: 'ClickPatrol_Conversion',
-  conversion_id: 'trial_started',
-  conversion_type: 'lead',
-  conversion_value: 149.95,
+  conversion_id: 'order_10042',
+  conversion_label: 'AbCdEfGhIjk',
+  conversion_type: 'purchase',
+  conversion_value: 189.00,
   conversion_currency: 'EUR'
 });
 ```
+
+- `conversion_id` is this one conversion (order id, or a stable event
+  name). The tag uses it to ignore a refresh.
+- `conversion_label` is the Google Ads conversion label, the part after
+  the slash in `AW-123456789/AbCdEfGhIjk`. Optional. Send it if you want
+  to match or upload this conversion to that Google Ads action.
+- `conversion_type` is `lead` or `purchase`.
 
 The ClickPatrol tag does not listen to `purchase` or `generate_lead` by
 itself. Your existing conversion tag, thank-you page, or GTM Custom HTML
@@ -40,6 +48,7 @@ Typical GTM / GA4 events: `purchase`, `Purchase Completed`.
 window.dataLayer.push({
   event: 'ClickPatrol_Conversion',
   conversion_id: 'order_10042',
+  conversion_label: 'AbCdEfGhIjk',
   conversion_type: 'purchase',
   conversion_value: 189.00,
   conversion_currency: 'EUR'
@@ -58,6 +67,7 @@ Typical GTM / GA4 events: `generate_lead`, `Lead Submitted`,
 window.dataLayer.push({
   event: 'ClickPatrol_Conversion',
   conversion_id: 'demo_request',
+  conversion_label: 'XyZLabel123',
   conversion_type: 'lead'
 });
 ```
@@ -78,6 +88,8 @@ window.dataLayer.push({
 });
 ```
 
+A trial without a Google Ads action can omit `conversion_label`.
+
 ## GTM setup
 
 1. Keep the ClickPatrol Ad Traffic Quality tag.
@@ -85,5 +97,8 @@ window.dataLayer.push({
 3. Attach that trigger to the same tag, next to All Pages.
 4. Let your purchase / lead tag push the event above, or add a small
    Custom HTML tag on those same triggers that only does the push.
+
+Find the Google Ads label under Tools > Conversions > the conversion
+action > Tag setup. It is the second part of `AW-XXXXXXX/LABEL`.
 
 Docs: https://docs.clickpatrol.com/conversion-tracking/
