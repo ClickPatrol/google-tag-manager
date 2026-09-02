@@ -179,6 +179,8 @@ const SESSION_KEY = 'cp_session_id';
 const CLASS_KEY = 'cp_class';
 const AUDIENCE_KEY = 'cp_audience';
 const CONV_KEY = 'cp_conv';
+const CONV_WATCH_FLAG = '_cpConvWatch';
+const CONV_SENT_FLAG = '_cpConvSent';
 const VISITOR_TTL_SECONDS = 400 * 24 * 60 * 60;
 const SESSION_TTL_SECONDS = 24 * 60 * 60;
 const CLASS_TTL_SECONDS = 24 * 60 * 60;
@@ -739,6 +741,23 @@ function appendQuery(url, key, value) {
   return url + '&' + key + '=' + encodeUriComponent(value);
 }
 
+// Claims one conversion_id for this page load. Guards the case where the tag
+// also sits on a Custom Event trigger: the trigger fire and the watch would
+// otherwise both reach the same push. Independent of dedupeConversions, which
+// covers repeats across page loads in a session.
+function claimConversionOnce(convId) {
+  const raw = asString(copyFromWindow(CONV_SENT_FLAG));
+  const ids = raw ? raw.split(',') : [];
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i] === convId) {
+      return false;
+    }
+  }
+  ids.push(convId);
+  setInWindow(CONV_SENT_FLAG, ids.join(','), true);
+  return true;
+}
+
 function sendConversion(sessId, item, fromWatch) {
   const convId = asString(fieldFrom(item, 'conversion_id'));
   const wireType = mapConversionType(fieldFrom(item, 'conversion_type'));
@@ -755,6 +774,19 @@ function sendConversion(sessId, item, fromWatch) {
       data.gtmOnSuccess();
     }
     return;
+  }
+
+  if (!claimConversionOnce(convId)) {
+    if (!fromWatch) {
+      data.gtmOnSuccess();
+    }
+    return;
+  }
+
+  // Marked before the request, not in the callback. Injecting is async, so a
+  // second reader would otherwise pass the check while this one is in flight.
+  if (dedupeOn) {
+    rememberConversion(sessId, convId);
   }
 
   let url = 'https://conversion.clckptrl.com/?uid=' + encodeUriComponent(data.uid);
@@ -778,9 +810,6 @@ function sendConversion(sessId, item, fromWatch) {
   url = appendQuery(url, 'tblci', clickFromOverrideUrlOrCookie('tblci', '', null, item));
 
   injectScript(url, function() {
-    if (dedupeOn) {
-      rememberConversion(sessId, convId);
-    }
     if (!fromWatch) {
       data.gtmOnSuccess();
     }
@@ -799,10 +828,10 @@ function dataLayerLength(dl) {
 }
 
 function startConversionWatch(sessId) {
-  if (copyFromWindow('_cpConvWatch')) {
+  if (copyFromWindow(CONV_WATCH_FLAG)) {
     return;
   }
-  setInWindow('_cpConvWatch', true, false);
+  setInWindow(CONV_WATCH_FLAG, true, false);
   let seen = 0;
   const scan = function() {
     const dl = copyFromWindow('dataLayer');
@@ -2957,6 +2986,45 @@ ___WEB_PERMISSIONS___
                     "boolean": false
                   }
                 ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_cpConvSent"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
               }
             ]
           }
@@ -4173,6 +4241,76 @@ scenarios:
     }
     assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=later_lead&conversion_type=LEAD');
     assertApi('gtmOnSuccess').wasCalled();
+- name: A Custom Event trigger does not resend a conversion the watch already claimed
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'order_10042'; }
+    if (key === 'conversion_type') { return 'purchase'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === '_cpConvSent') { return 'order_10042'; }
+    return [];
+    });
+    mock('setInWindow', function() {});
+    mock('callInWindow', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let injected = false;
+    mock('injectScript', function() { injected = true; });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(false);
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Marks cp_conv before the pixel responds so an in-flight repeat is blocked
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'trial_started'; }
+    if (key === 'conversion_type') { return 'lead'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('setInWindow', function() {});
+    mock('callInWindow', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    let convValue = null;
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function(key, value) {
+    if (key === 'cp_conv') { convValue = value; }
+    },
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let injected = false;
+    mock('injectScript', function() { injected = true; });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(true);
+    assertThat(convValue).isEqualTo('_session.trial_started');
 
 ___NOTES___
 
@@ -4200,10 +4338,24 @@ Classification cache (cp_class + cp_audience):
 Conversion pixel (ClickPatrol_Conversion):
 - All Pages is enough. The first fire installs a dataLayer watch, so a
   later ClickPatrol_Conversion push is sent without a second trigger.
+- A Custom Event trigger on ClickPatrol_Conversion is still supported and
+  is the exact path: it sends immediately instead of on the next scan.
+  Both routes together cannot double-send (see the two guards below).
 - The site pushes conversion_id, conversion_type (lead or purchase),
   optional conversion_label (Google Ads label), and optional value/currency.
 - The tag maps lead to LEAD and purchase to TRANSACTION, fills click ids
   from the URL or first-party ad cookies, and loads
   https://conversion.clckptrl.com/. It does not call trck-002 on this event.
-- Repeated conversion_id values in the same session are ignored when
-  dedupeConversions is on (default). That state is stored in cp_conv.
+- Guard 1, per page load: _cpConvSent holds the conversion_id values already
+  claimed. Always on, so the trigger fire and the watch cannot both send.
+- Guard 2, per session: cp_conv holds the same ids across page loads, so a
+  refresh of the thank-you page does not count twice. Switchable with
+  dedupeConversions (default on).
+- Both guards are written before injectScript, not in its callback. Injecting
+  is async, so marking afterwards left a window where a second reader passed
+  the check. A pixel that fails to load is therefore not retried.
+- The watch scans window.dataLayer on a 400ms setTimeout loop. The sandbox has
+  no dataLayer listener API (addEventCallback is per-event tag monitoring and
+  callLater is setTimeout 0), so a scan is the only zero-config option. Cost:
+  up to 400ms extra latency and a timer for the page lifetime. Use the Custom
+  Event trigger when that latency matters.

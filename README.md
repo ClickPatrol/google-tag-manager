@@ -3,7 +3,7 @@
 Google Tag Manager template for ClickPatrol traffic quality.
 
 The same tag also sends conversions when it sees a `ClickPatrol_Conversion`
-dataLayer event. All Pages is enough. Do not add a second trigger.
+dataLayer event. All Pages is enough, so no second trigger is required.
 
 Do not use a separate Custom HTML conversion snippet.
 
@@ -96,6 +96,12 @@ A trial without a Google Ads action can omit `conversion_label`.
    fire also watches for later `ClickPatrol_Conversion` pushes.
 2. Let your purchase / lead tag push the event above, or add a small
    Custom HTML tag on those same triggers that only does the push.
+
+Optional, for the fastest path: also fire this tag on a Custom Event
+trigger named `ClickPatrol_Conversion`. That sends the conversion on the
+push itself instead of on the next scan, up to 400ms earlier. Running both
+routes is safe, because the tag claims each `conversion_id` once per page
+load and once per session.
 
 Find the Google Ads label under Tools > Conversions > the conversion
 action > Tag setup. It is the second part of `AW-XXXXXXX/LABEL`.
