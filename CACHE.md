@@ -11,6 +11,7 @@ First-party stores used by the GTM template and the CMS / website loaders.
 | `cp_session_id` | 24 hours, rolling | Session id (already live) |
 | `cp_class` | 24 hours | Event + traffic only |
 | `cp_audience` | 24 hours | Opaque audience object |
+| `cp_conv` | session (localStorage only) | Conversion ids already sent in this session |
 
 Flags: `path=/`, `SameSite=Lax`, `Secure` on HTTPS, broadest registrable domain.
 Each store has a localStorage key of the same name. Write localStorage only when the value changes.
@@ -61,3 +62,17 @@ dataLayer.push({
   audience: { /* only if cp_audience is valid */ }
 });
 ```
+
+## `cp_conv`
+
+localStorage only. Format:
+
+```
+<last8 of session id>.<id1>,<id2>,...
+```
+
+Example: `_session.trial_started,order_99`
+
+Used by the GTM conversion path so a thank-you refresh does not send
+the same `conversion_id` twice. A new session suffix starts a new list.
+CMS loaders do not write this key yet.
