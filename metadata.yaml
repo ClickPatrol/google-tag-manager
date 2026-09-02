@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: 179ac4e38cd0386f4304fd9695f3034532bdd376
+    changeNotes: Claim each conversion_id once per page and per session, so an optional Custom Event trigger cannot send the same conversion twice.
   - sha: ff8335adccbef888ab9d143dbfd8203e050d1259
     changeNotes: All Pages watches for ClickPatrol_Conversion. A second trigger is not required.
   - sha: e1accab88d7ec8f5a3805753e675f0aa2e81c623
