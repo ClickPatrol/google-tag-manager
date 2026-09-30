@@ -11,7 +11,9 @@ Do not use a separate Custom HTML conversion snippet.
 
 Push this after a confirmed lead or purchase. `conversion_type` must be
 `lead` or `purchase`. The tag fills click ids from the page URL or
-first-party ad cookies.
+first-party ad cookies. On a later page, gclid comes from `_gcl_aw`,
+wbraid from `_gcl_gb` and gbraid from `_gcl_ag`. Those cookies are
+written by the Google tag. This tag only reads them.
 
 ```javascript
 window.dataLayer = window.dataLayer || [];

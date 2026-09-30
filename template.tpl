@@ -88,7 +88,7 @@ ___TEMPLATE_PARAMETERS___
       {
         "type": "CHECKBOX",
         "name": "extendGoogleAds",
-        "checkboxText": "Google Ads (_gcl_au, _gcl_aw, _gcl_gb, _gcl_gs) – 90 days",
+        "checkboxText": "Google Ads (_gcl_au, _gcl_aw, _gcl_gb, _gcl_ag, _gcl_gs) – 90 days",
         "simpleValueType": true,
         "defaultValue": false
       },
@@ -644,6 +644,74 @@ function stripGclAw(raw) {
   return raw.substring(second + 1);
 }
 
+// Google stores these ids only when they match this alphabet. Anything else
+// is a parse miss, and sending it would attribute the conversion to garbage.
+function clickToken(value) {
+  if (!value) {
+    return '';
+  }
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charAt(i);
+    const ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '_' || c === '-';
+    if (!ok) {
+      return '';
+    }
+  }
+  return value;
+}
+
+function safeDecode(value) {
+  try {
+    return decodeUriComponent(value);
+  } catch (e) {
+    return '';
+  }
+}
+
+// _gcl_gb holds wbraid as GCL.{seconds}.{wbraid}[.{labels}]. The id is the
+// third segment. Labels after it are not part of the id.
+function stripGclGb(raw) {
+  if (!raw || raw.indexOf('GCL.') !== 0) {
+    return '';
+  }
+  const parts = raw.split('.');
+  if (parts.length < 3 || parts[0] !== 'GCL') {
+    return '';
+  }
+  return clickToken(parts[2]);
+}
+
+// _gcl_ag holds gbraid as 2.{domain}.k{id}$i{seconds}[$...], the shape the
+// Google tag writes. It is not the GCL. dot format used by _gcl_aw. A cookie
+// that does not match is skipped, never forwarded raw.
+function stripGclAg(raw) {
+  if (!raw) {
+    return '';
+  }
+  const parts = raw.split('.');
+  if (parts.length !== 3 || parts[0] !== '2') {
+    return '';
+  }
+  let payload = parts[2];
+  if (payload.indexOf('$') < 0 && payload.indexOf('%24') !== -1) {
+    payload = safeDecode(payload);
+  }
+  if (!payload) {
+    return '';
+  }
+  const segments = payload.split('$');
+  for (let i = 0; i < segments.length; i++) {
+    let seg = segments[i];
+    if (seg.indexOf('%') !== -1) {
+      seg = safeDecode(seg);
+    }
+    if (seg && seg.charAt(0) === 'k') {
+      return clickToken(seg.substring(1));
+    }
+  }
+  return '';
+}
+
 function stripFbc(raw) {
   if (!raw) {
     return '';
@@ -796,8 +864,8 @@ function sendConversion(sessId, item, fromWatch) {
   url = appendQuery(url, 'conversion_currency', asString(fieldFrom(item, 'conversion_currency')));
   url = appendQuery(url, 'conversion_type', wireType);
   url = appendQuery(url, 'gclid', clickFromOverrideUrlOrCookie('gclid', '_gcl_aw', stripGclAw, item));
-  url = appendQuery(url, 'gbraid', clickFromOverrideUrlOrCookie('gbraid', '', null, item));
-  url = appendQuery(url, 'wbraid', clickFromOverrideUrlOrCookie('wbraid', '', null, item));
+  url = appendQuery(url, 'gbraid', clickFromOverrideUrlOrCookie('gbraid', '_gcl_ag', stripGclAg, item));
+  url = appendQuery(url, 'wbraid', clickFromOverrideUrlOrCookie('wbraid', '_gcl_gb', stripGclGb, item));
   url = appendQuery(url, 'msclkid', clickFromOverrideUrlOrCookie('msclkid', '_uetmsclkid', null, item));
   url = appendQuery(url, 'fbclid', clickFromOverrideUrlOrCookie('fbclid', '_fbc', stripFbc, item));
   url = appendQuery(url, 'ttclid', clickFromOverrideUrlOrCookie('ttclid', 'ttclid', null, item));
@@ -882,7 +950,7 @@ const L400 = 400 * DAY;
 const extendGroups = [
   { on: data.extendStape,           list: [['stape', L400]] },
   { on: data.extendGoogleAnalytics, list: [['_ga', L400]] },
-  { on: data.extendGoogleAds,       list: [['_gcl_au', L90], ['_gcl_aw', L90], ['_gcl_gb', L90], ['_gcl_gs', L90]] },
+  { on: data.extendGoogleAds,       list: [['_gcl_au', L90], ['_gcl_aw', L90], ['_gcl_gb', L90], ['_gcl_ag', L90], ['_gcl_gs', L90]] },
   { on: data.extendFacebook,        list: [['_fbp', L90], ['_fbc', L90]] },
   { on: data.extendTikTok,          list: [['_ttp', L400], ['ttclid', L30]] },
   { on: data.extendAffiliates,      list: [['awin_awc', L400], ['awin_source', L400], ['awin_sn_awc', L365], ['rakuten_site_id', L400], ['rakuten_time_entered', L400], ['rakuten_ran_mid', L400], ['rakuten_ran_eaid', L400], ['rakuten_ran_site_id', L400], ['outbrain_cid', L400], ['taboola_cid', L400], ['cje', L400]] },
@@ -1054,6 +1122,10 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "_gcl_gb"
+              },
+              {
+                "type": 1,
+                "string": "_gcl_ag"
               },
               {
                 "type": 1,
@@ -1573,6 +1645,53 @@ ___WEB_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "_gcl_gb"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_gcl_ag"
                   },
                   {
                     "type": 1,
@@ -4001,6 +4120,146 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&fbclid=fbclidvalue');
+- name: Fills wbraid from _gcl_gb and keeps only the third segment
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'trial_started'; }
+    if (key === 'conversion_type') { return 'lead'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === '_gcl_gb') { return ['GCL.1730000000.wbraidvalue.label']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let injected = '';
+    mock('injectScript', function(url, onSuccess) {
+    injected = url;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&wbraid=wbraidvalue');
+- name: Fills gbraid from _gcl_ag and reads the k field
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'trial_started'; }
+    if (key === 'conversion_type') { return 'lead'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === '_gcl_ag') { return ['2.1.k0AAAAA-gbraid$i1730000000$b1']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let injected = '';
+    mock('injectScript', function(url, onSuccess) {
+    injected = url;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gbraid=0AAAAA-gbraid');
+- name: Prefers gbraid and wbraid from the URL over the cookies
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'trial_started'; }
+    if (key === 'conversion_type') { return 'lead'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === '_gcl_ag') { return ['2.1.kcookiegbraid$i1730000000']; }
+    if (name === '_gcl_gb') { return ['GCL.1730000000.cookiewbraid']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function(key) {
+    if (key === 'gbraid') { return 'urlgbraid'; }
+    if (key === 'wbraid') { return 'urlwbraid'; }
+    });
+    mock('getUrl', function(component) {
+    return component === 'query' ? 'gbraid=urlgbraid&wbraid=urlwbraid' : 'https://example.com/thanks';
+    });
+    let injected = '';
+    mock('injectScript', function(url, onSuccess) {
+    injected = url;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gbraid=urlgbraid&wbraid=urlwbraid');
+- name: Skips a gbraid or wbraid cookie that is not in Google's format
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'trial_started'; }
+    if (key === 'conversion_type') { return 'lead'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === '_gcl_ag') { return ['GCL.123.notgbraid']; }
+    if (name === '_gcl_gb') { return ['rawwbraid']; }
+    if (name === '_gcl_gs') { return ['2.1.k3$i10']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let injected = '';
+    mock('injectScript', function(url, onSuccess) {
+    injected = url;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
+    assertThat(injected.indexOf('gbraid=')).isEqualTo(-1);
+    assertThat(injected.indexOf('wbraid=')).isEqualTo(-1);
 - name: Omits empty conversion and click-id parameters
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4303,8 +4562,15 @@ Conversion pixel (ClickPatrol_Conversion):
 - The site pushes conversion_id, conversion_type (lead or purchase),
   optional conversion_label (Google Ads label), and optional value/currency.
 - The tag maps lead to LEAD and purchase to TRANSACTION, fills click ids
-  from the URL or first-party ad cookies, and loads
-  https://conversion.clckptrl.com/. It does not call trck-002 on this event.
+  from the dataLayer, then the page URL, then the platform cookie, and loads
+  https://conversion.clckptrl.com/. Empty values are left off the request.
+  It does not call trck-002 on this event.
+- Google click ids on a later page come from the cookies the Google tag
+  already wrote, and only after ad_storage was granted. gclid is read from
+  _gcl_aw. wbraid is read from _gcl_gb (GCL.seconds.id, third segment only).
+  gbraid is read from _gcl_ag (2.domain.k{id}$i{seconds}). A cookie that does
+  not match that shape is skipped. _gcl_gs is gad_source, not a click id.
+  This tag does not write its own click-id cookies.
 - Guard 1, per page load: _cpConvSent holds the conversion_id values already
   claimed. Always on, so the trigger fire and the watch cannot both send.
 - Guard 2, per session: cp_conv holds the same ids across page loads, so a

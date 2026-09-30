@@ -128,7 +128,41 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('a refresh in the same session is ignored', conv(a).length === 1 && conv(b).length === 0, '');
 }
 
-// 6. Watch installs only once across executions.
+// 6. Later-page Google click ids from the cookies the Google tag writes.
+{
+  const w = newWorld([]);
+  w.cookies._gcl_gb = 'GCL.1730000000.wbraidvalue.label';
+  w.cookies._gcl_ag = '2.1.k0AAAAA-gbraid$i1730000000$b1';
+  const urls = run(w, { dl: { event: 'ClickPatrol_Conversion', conversion_id: 'trial_started', conversion_type: 'lead' } });
+  const c = conv(urls);
+  check('wbraid is the third segment of _gcl_gb', c.length === 1 && c[0].includes('wbraid=wbraidvalue') && c[0].indexOf('wbraidvalue.label') === -1, c[0] || '');
+  check('gbraid is the k field of _gcl_ag', c.length === 1 && c[0].includes('gbraid=0AAAAA-gbraid'), c[0] || '');
+}
+
+{
+  const w = newWorld([]);
+  w.cookies._gcl_ag = 'GCL.123.notgbraid';
+  w.cookies._gcl_gb = 'rawwbraid';
+  w.cookies._gcl_gs = '2.1.k3$i10';
+  const urls = run(w, { dl: { event: 'ClickPatrol_Conversion', conversion_id: 'trial_started', conversion_type: 'lead' } });
+  const c = conv(urls);
+  const url = c[0] || '';
+  check('a mismatched braid cookie is omitted', c.length === 1 && url.indexOf('gbraid=') === -1 && url.indexOf('wbraid=') === -1, url);
+}
+
+{
+  const w = newWorld([]);
+  w.cookies._gcl_ag = '2.1.kcookiegbraid$i1730000000';
+  w.cookies._gcl_gb = 'GCL.1730000000.cookiewbraid';
+  const urls = run(w, {
+    dl: { event: 'ClickPatrol_Conversion', conversion_id: 'trial_started', conversion_type: 'lead' },
+    params: { gbraid: 'urlgbraid', wbraid: 'urlwbraid' },
+  });
+  const c = conv(urls);
+  check('URL braid ids win over cookies', c.length === 1 && c[0].includes('gbraid=urlgbraid') && c[0].includes('wbraid=urlwbraid'), c[0] || '');
+}
+
+// 7. Watch installs only once across executions.
 {
   const w = newWorld([{ event: 'gtm.js' }]);
   run(w, { dl: { event: 'gtm.js' } });
