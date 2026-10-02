@@ -660,14 +660,6 @@ function clickToken(value) {
   return value;
 }
 
-function safeDecode(value) {
-  try {
-    return decodeUriComponent(value);
-  } catch (e) {
-    return '';
-  }
-}
-
 // _gcl_gb holds wbraid as GCL.{seconds}.{wbraid}[.{labels}]. The id is the
 // third segment. Labels after it are not part of the id.
 function stripGclGb(raw) {
@@ -682,8 +674,9 @@ function stripGclGb(raw) {
 }
 
 // _gcl_ag holds gbraid as 2.{domain}.k{id}$i{seconds}[$...], the shape the
-// Google tag writes. It is not the GCL. dot format used by _gcl_aw. A cookie
-// that does not match is skipped, never forwarded raw.
+// Google tag writes. A percent-encoded separator (%24) is unfolded with
+// split/join. Any other % is a parse miss.
+// A cookie that does not match is skipped, never forwarded raw.
 function stripGclAg(raw) {
   if (!raw) {
     return '';
@@ -694,17 +687,14 @@ function stripGclAg(raw) {
   }
   let payload = parts[2];
   if (payload.indexOf('$') < 0 && payload.indexOf('%24') !== -1) {
-    payload = safeDecode(payload);
+    payload = payload.split('%24').join('$');
   }
-  if (!payload) {
+  if (!payload || payload.indexOf('%') !== -1) {
     return '';
   }
   const segments = payload.split('$');
   for (let i = 0; i < segments.length; i++) {
-    let seg = segments[i];
-    if (seg.indexOf('%') !== -1) {
-      seg = safeDecode(seg);
-    }
+    const seg = segments[i];
     if (seg && seg.charAt(0) === 'k') {
       return clickToken(seg.substring(1));
     }

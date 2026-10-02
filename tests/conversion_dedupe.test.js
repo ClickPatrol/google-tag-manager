@@ -141,6 +141,14 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
 
 {
   const w = newWorld([]);
+  w.cookies._gcl_ag = '2.1.k0AAAAA-gbraid%24i1730000000';
+  const urls = run(w, { dl: { event: 'ClickPatrol_Conversion', conversion_id: 'trial_started', conversion_type: 'lead' } });
+  const c = conv(urls);
+  check('gbraid still reads when the separator is percent-encoded', c.length === 1 && c[0].includes('gbraid=0AAAAA-gbraid'), c[0] || '');
+}
+
+{
+  const w = newWorld([]);
   w.cookies._gcl_ag = 'GCL.123.notgbraid';
   w.cookies._gcl_gb = 'rawwbraid';
   w.cookies._gcl_gs = '2.1.k3$i10';
