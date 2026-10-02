@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: fc2997a2492cbb1cbdf14ada3b3cd76063d47e6e
+    changeNotes: Parse gbraid without an exception handler. The template sandbox rejects try, catch and finally, which blocked publishing the container.
   - sha: 0ff0c53f467c7093ec002f618f64bd2c87b09229
     changeNotes: Fill gbraid from the _gcl_ag cookie and wbraid from _gcl_gb when the conversion page no longer has them in the URL.
   - sha: 8ca7ef55372f8a4660dacce9baaaf6fb66de84fe
