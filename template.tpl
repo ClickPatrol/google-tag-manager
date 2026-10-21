@@ -992,10 +992,34 @@ if (currentEvent === 'ClickPatrol_Conversion') {
     scriptUrl = scriptUrl + '&visitor_id=' + encodeUriComponent(visitorId);
     scriptUrl = scriptUrl + '&session_id=' + encodeUriComponent(sessionId);
 
-    injectScript(scriptUrl, function () {
-      storeLatestFromWindow(sessionId);
+    // A <script> inserted before window.load holds the load event, even when
+    // async. document.readyState is a string, so the sandbox can read that
+    // one key. 'loading' and 'interactive' wait. 'complete' injects now.
+    // Any other value (a test mock, or a container that has not granted the
+    // key) injects now, so a missed permission cannot drop the tracker.
+    if (copyFromWindow('_cpTrckSrc') === scriptUrl) {
       data.gtmOnSuccess();
-    }, data.gtmOnFailure);
+    } else {
+      setInWindow('_cpTrckSrc', scriptUrl, true);
+      const fireTracker = function() {
+        injectScript(scriptUrl, function () {
+          storeLatestFromWindow(sessionId);
+          data.gtmOnSuccess();
+        }, function() {
+          setInWindow('_cpTrckSrc', '', true);
+          data.gtmOnFailure();
+        });
+      };
+      const waitForLoad = function() {
+        const state = copyFromWindow('document.readyState');
+        if (state !== 'loading' && state !== 'interactive') {
+          fireTracker();
+          return;
+        }
+        callLater(waitForLoad);
+      };
+      waitForLoad();
+    }
   }
 }
 
@@ -3097,6 +3121,84 @@ ___WEB_PERMISSIONS___
                     "boolean": false
                   }
                 ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_cpTrckSrc"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "document.readyState"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
               }
             ]
           }
@@ -3244,6 +3346,47 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Holds trck-002 until document.readyState is complete
+  code: |-
+    let state = 'loading';
+    let queued = [];
+    let injected = false;
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === 'document.readyState') { return state; }
+    return [];
+    });
+    mock('callLater', function(fn) { queued.push(fn); });
+    mock('getCookieValues', function(name) {
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess, onFailure) {
+    injected = true;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(injected).isEqualTo(false);
+    state = 'complete';
+    let guard = 0;
+    while (injected === false && queued.length > 0 && guard < 8) {
+    let fn = queued.shift();
+    fn();
+    guard = guard + 1;
+    }
+    assertThat(injected).isEqualTo(true);
     assertApi('gtmOnSuccess').wasCalled();
 - name: Appends the page query string before the tracking params
   code: |-
@@ -4538,6 +4681,10 @@ Classification cache (cp_class + cp_audience):
   ClickPatrol_* payload in first-party cookies (plus localStorage backup).
 - All Pages is enough. The ClickPatrol_.* trigger on this tag is optional.
 - Later All Pages fires replay the same dataLayer push without calling trck-002.
+- A cache miss does not insert trck-002 while document.readyState is
+  loading or interactive. The script waits until complete, so a slow
+  tracker response does not hold window.load. A cache hit still replays
+  immediately. Conversion pixels are not delayed.
 - A click id in the URL (source, gclid, gbraid, wbraid, fbclid, msclkid,
   ttclid, li_fat_id, vd) reclassifies only when it differs from the hash
   stored on cp_class. The same source or gclid replays. A 5-part cache

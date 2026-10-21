@@ -179,6 +179,20 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('watch installs once per page', afterFirst === 1 && w.timers.length === 1, 'timers ' + w.timers.length);
 }
 
+{
+  const w = newWorld([]);
+  w.win['document.readyState'] = 'loading';
+  const urls = run(w, { dl: { event: 'gtm.js' } });
+  check('trck-002 waits while the document is still loading', !urls.some((u) => u.includes('trck-002')), urls.join(' '));
+  w.win['document.readyState'] = 'complete';
+  let guard = 0;
+  while (!urls.some((u) => u.includes('trck-002')) && w.timers.length && guard < 8) {
+    w.timers.shift()();
+    guard++;
+  }
+  check('trck-002 loads once the document is complete', urls.some((u) => u.includes('trck-002')), 'guard ' + guard);
+}
+
 let failed = 0;
 for (const r of results) {
   if (!r.pass) failed++;
