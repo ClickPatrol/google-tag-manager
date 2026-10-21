@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: 42066396d881359c525611e8f9c877fb551d2444
+    changeNotes: Load the tracker after window.load, so a slow trck-002 response does not hold the page. A cached classification still replays immediately.
   - sha: fc2997a2492cbb1cbdf14ada3b3cd76063d47e6e
     changeNotes: Parse gbraid without an exception handler. The template sandbox rejects try, catch and finally, which blocked publishing the container.
   - sha: 0ff0c53f467c7093ec002f618f64bd2c87b09229
