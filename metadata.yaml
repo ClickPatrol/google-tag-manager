@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: 22e58f696d5a793c7a772933fc6843189ba11ccf
+    changeNotes: Add configurable consent storage modes (full, session, memory) and expose classification to window.clickPatrolClassification, window.adobeDataLayer, and optional _satellite.track.
   - sha: 42066396d881359c525611e8f9c877fb551d2444
     changeNotes: Load the tracker after window.load, so a slow trck-002 response does not hold the page. A cached classification still replays immediately.
   - sha: fc2997a2492cbb1cbdf14ada3b3cd76063d47e6e
