@@ -49,6 +49,37 @@ ___TEMPLATE_PARAMETERS___
     ]
   },
   {
+    "type": "SELECT",
+    "name": "storageMode",
+    "displayName": "Consent & storage mode",
+    "macrosInSelect": true,
+    "selectItems": [
+      {
+        "value": "full",
+        "displayValue": "Full (first-party cookies + localStorage, 400-day visitor ID)"
+      },
+      {
+        "value": "session",
+        "displayValue": "Session only (24-hour cookies max, no localStorage)"
+      },
+      {
+        "value": "memory",
+        "displayValue": "Memory only / Cookieless (no cookies, no localStorage)"
+      }
+    ],
+    "simpleValueType": true,
+    "defaultValue": "full",
+    "help": "Controls how ClickPatrol stores its visitor ID, session ID, and classification cache. Use \u0027Session only\u0027 to cap all cookies to 24 hours without localStorage, or \u0027Memory only\u0027 for cookieless operation before consent. You can also pass a GTM variable or upgrade dynamically after consent via window.ClickPatrol.setStorageMode(\u0027full\u0027)."
+  },
+  {
+    "type": "CHECKBOX",
+    "name": "enableAdobeDirectCall",
+    "checkboxText": "Trigger Adobe Launch Direct Call (_satellite.track) on classification",
+    "simpleValueType": true,
+    "defaultValue": false,
+    "help": "When enabled and Adobe Launch (_satellite.track) is present on the page, fires _satellite.track(\u0027ClickPatrol_Legitimate\u0027, payload) or _satellite.track(\u0027ClickPatrol_Suspicious\u0027, payload). Classification is always exposed on window.clickPatrolClassification and pushed to window.adobeDataLayer when present."
+  },
+  {
     "type": "CHECKBOX",
     "name": "enableGclidRecovery",
     "checkboxText": "Restore GCLID for Safari/ITP (recreate _gcl_aw from the vd parameter)",
@@ -168,6 +199,7 @@ const getQueryParameters = require('getQueryParameters');
 const copyFromDataLayer = require('copyFromDataLayer');
 const copyFromWindow = require('copyFromWindow');
 const setInWindow = require('setInWindow');
+const callInWindow = require('callInWindow');
 const callLater = require('callLater');
 const createQueue = require('createQueue');
 const getType = require('getType');
@@ -181,6 +213,9 @@ const AUDIENCE_KEY = 'cp_audience';
 const CONV_KEY = 'cp_conv';
 const CONV_WATCH_FLAG = '_cpConvWatch';
 const CONV_SENT_FLAG = '_cpConvSent';
+const STORAGE_MODE_FLAG = '_cpStorageMode';
+const MEM_STORE_FLAG = '_cpMemStore';
+const CLASS_EMITTED_FLAG = '_cpClassEmitted';
 const VISITOR_TTL_SECONDS = 400 * 24 * 60 * 60;
 const SESSION_TTL_SECONDS = 24 * 60 * 60;
 const CLASS_TTL_SECONDS = 24 * 60 * 60;
@@ -193,6 +228,59 @@ const HEX = '0123456789abcdef';
 const B36 = '0123456789abcdefghijklmnopqrstuvwxyz';
 const CLICK_KEYS = ['source', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'li_fat_id', 'vd'];
 
+function activeStorageMode() {
+  const override = copyFromWindow(STORAGE_MODE_FLAG);
+  if (override === 'full' || override === 'session' || override === 'memory') {
+    return override;
+  }
+  const configured = data.storageMode;
+  if (configured === 'session' || configured === 'memory') {
+    return configured;
+  }
+  return 'full';
+}
+
+function cookiesAllowed() {
+  return activeStorageMode() !== 'memory';
+}
+
+function lsAllowed() {
+  return activeStorageMode() === 'full';
+}
+
+function effectiveCookieTtl(ttlSeconds) {
+  if (activeStorageMode() === 'session' && ttlSeconds > SESSION_TTL_SECONDS) {
+    return SESSION_TTL_SECONDS;
+  }
+  return ttlSeconds;
+}
+
+function getMemStore() {
+  const raw = copyFromWindow(MEM_STORE_FLAG);
+  if (raw && getType(raw) === 'object') {
+    return raw;
+  }
+  return {};
+}
+
+function getMem(key) {
+  const store = getMemStore();
+  const val = store[key];
+  return val ? '' + val : '';
+}
+
+function setMem(key, value) {
+  const store = getMemStore();
+  store[key] = value;
+  setInWindow(MEM_STORE_FLAG, store, true);
+}
+
+function removeMem(key) {
+  const store = getMemStore();
+  store[key] = '';
+  setInWindow(MEM_STORE_FLAG, store, true);
+}
+
 function generateId() {
   let random = '';
   for (let i = 0; i < 16; i++) {
@@ -202,6 +290,9 @@ function generateId() {
 }
 
 function lsGet(key) {
+  if (!lsAllowed()) {
+    return getMem(key);
+  }
   if (!localStorage) {
     return '';
   }
@@ -210,7 +301,8 @@ function lsGet(key) {
 }
 
 function lsSetIfChanged(key, value) {
-  if (!localStorage) {
+  setMem(key, value);
+  if (!lsAllowed() || !localStorage) {
     return;
   }
   if (lsGet(key) === value) {
@@ -220,13 +312,17 @@ function lsSetIfChanged(key, value) {
 }
 
 function lsRemove(key) {
-  if (!localStorage) {
+  removeMem(key);
+  if (!lsAllowed() || !localStorage) {
     return;
   }
   localStorage.removeItem(key);
 }
 
 function readCookie(name) {
+  if (!cookiesAllowed()) {
+    return getMem(name);
+  }
   const cookieValues = getCookieValues(name);
   if (cookieValues && cookieValues.length > 0 && cookieValues[0]) {
     return cookieValues[0];
@@ -235,10 +331,14 @@ function readCookie(name) {
 }
 
 function writeCookie(name, value, ttlSeconds) {
+  setMem(name, value);
+  if (!cookiesAllowed()) {
+    return;
+  }
   setCookie(name, value, {
     'domain': 'auto',
     'path': '/',
-    'max-age': ttlSeconds,
+    'max-age': effectiveCookieTtl(ttlSeconds),
     'samesite': 'lax',
     'secure': true
   });
@@ -543,6 +643,37 @@ function trafficCodeFromValue(traffic) {
   return '';
 }
 
+function emitClassification(eventName, traffic, audience) {
+  if (eventName !== 'ClickPatrol_Legitimate' && eventName !== 'ClickPatrol_Suspicious') {
+    return;
+  }
+  const payload = {
+    event: eventName,
+    traffic: asString(traffic)
+  };
+  if (audience && getType(audience) === 'object') {
+    payload.audience = audience;
+  }
+  setInWindow('clickPatrolClassification', payload, true);
+  const cpObj = copyFromWindow('ClickPatrol');
+  if (cpObj && getType(cpObj) === 'object') {
+    cpObj.classification = payload;
+    setInWindow('ClickPatrol', cpObj, true);
+  }
+  const sig = eventName + ':' + payload.traffic;
+  if (copyFromWindow(CLASS_EMITTED_FLAG) === sig) {
+    return;
+  }
+  setInWindow(CLASS_EMITTED_FLAG, sig, true);
+  if (getType(copyFromWindow('adobeDataLayer.push')) === 'function') {
+    const pushAdobe = createQueue('adobeDataLayer');
+    pushAdobe(payload);
+  }
+  if (data.enableAdobeDirectCall && getType(copyFromWindow('_satellite.track')) === 'function') {
+    callInWindow('_satellite.track', eventName, payload);
+  }
+}
+
 function storeFromItem(item, sessId) {
   if (!item || getType(item) !== 'object') {
     return;
@@ -558,6 +689,9 @@ function storeFromItem(item, sessId) {
     if (encoded) {
       writeAudienceValue(encoded);
     }
+  }
+  if (kind && trafficCode) {
+    emitClassification(item.event, item.traffic, item.audience);
   }
 }
 
@@ -601,6 +735,7 @@ function replayFromCache(sessId) {
   }
   const push = createQueue('dataLayer');
   push(payload);
+  emitClassification(payload.event, payload.traffic, payload.audience);
   return true;
 }
 
@@ -912,10 +1047,50 @@ function startConversionWatch(sessId) {
   callLater(tick);
 }
 
+function exposeClickPatrolApi(sessId, visId) {
+  const existing = copyFromWindow('ClickPatrol');
+  const api = (existing && getType(existing) === 'object') ? existing : {};
+  const latest = copyFromWindow('clickPatrolClassification');
+  if (latest && getType(latest) === 'object') {
+    api.classification = latest;
+  }
+  api.trackConversion = function(item) {
+    if (!item || getType(item) !== 'object') {
+      return;
+    }
+    sendConversion(sessId, item, true);
+  };
+  api.setStorageMode = function(mode) {
+    if (mode !== 'full' && mode !== 'session' && mode !== 'memory') {
+      return;
+    }
+    setInWindow(STORAGE_MODE_FLAG, mode, true);
+    if (mode === 'memory') {
+      return;
+    }
+    const vId = getMem(VISITOR_KEY) || visId;
+    const sId = getMem(SESSION_KEY) || sessId;
+    if (vId) {
+      writeCookie(VISITOR_KEY, vId, VISITOR_TTL_SECONDS);
+      lsSetIfChanged(VISITOR_KEY, vId);
+    }
+    if (sId) {
+      writeCookie(SESSION_KEY, sId, SESSION_TTL_SECONDS);
+      lsSetIfChanged(SESSION_KEY, sId);
+    }
+    const currentClass = copyFromWindow('clickPatrolClassification');
+    if (currentClass && getType(currentClass) === 'object' && sId) {
+      storeFromItem(currentClass, sId);
+    }
+  };
+  setInWindow('ClickPatrol', api, true);
+}
+
 const visitorId = readOrCreateId(VISITOR_KEY, VISITOR_TTL_SECONDS);
 const sessionId = readOrCreateId(SESSION_KEY, SESSION_TTL_SECONDS);
+exposeClickPatrolApi(sessionId, visitorId);
 
-if (data.enableGclidRecovery) {
+if (data.enableGclidRecovery && cookiesAllowed()) {
   const realGclid = getQueryParameters('gclid');
   const vdGclid = getQueryParameters('vd');
   const existingGclAw = getCookieValues('_gcl_aw');
@@ -951,20 +1126,22 @@ const extendGroups = [
   { on: data.extendGoogleDV360,     list: [['_gcl_dc', L90]] }
 ];
 
-for (let g = 0; g < extendGroups.length; g++) {
-  if (!extendGroups[g].on) continue;
-  const cookieList = extendGroups[g].list;
-  for (let c = 0; c < cookieList.length; c++) {
-    const cName = cookieList[c][0];
-    const cVals = getCookieValues(cName);
-    if (cVals && cVals.length > 0 && cVals[0]) {
-      setCookie(cName, cVals[0], {
-        'domain': 'auto',
-        'path': '/',
-        'max-age': cookieList[c][1],
-        'samesite': 'lax',
-        'secure': true
-      });
+if (cookiesAllowed()) {
+  for (let g = 0; g < extendGroups.length; g++) {
+    if (!extendGroups[g].on) continue;
+    const cookieList = extendGroups[g].list;
+    for (let c = 0; c < cookieList.length; c++) {
+      const cName = cookieList[c][0];
+      const cVals = getCookieValues(cName);
+      if (cVals && cVals.length > 0 && cVals[0]) {
+        setCookie(cName, cVals[0], {
+          'domain': 'auto',
+          'path': '/',
+          'max-age': cookieList[c][1],
+          'samesite': 'lax',
+          'secure': true
+        });
+      }
     }
   }
 }
@@ -3199,6 +3376,318 @@ ___WEB_PERMISSIONS___
                     "boolean": false
                   }
                 ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "clickPatrolClassification"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ClickPatrol"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "adobeDataLayer"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "adobeDataLayer.push"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_satellite.track"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_cpStorageMode"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_cpMemStore"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_cpClassEmitted"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
               }
             ]
           }
@@ -4662,10 +5151,140 @@ scenarios:
     runCode({uid: 'TEST-UID-1234'});
     assertThat(injected).isEqualTo(true);
     assertThat(convValue).isEqualTo('_session.trial_started');
+- name: Exposes classification on window, adobeDataLayer and _satellite.track
+  code: |-
+    let winClass = null;
+    let adobePushed = null;
+    let satelliteCalled = null;
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Legitimate'; }
+    if (key === 'traffic') { return 'safe'; }
+    if (key === 'audience') { return { dhl_clean: true }; }
+    });
+    mock('createQueue', function(name) {
+    if (name === 'adobeDataLayer') {
+    return function(payload) { adobePushed = payload; };
+    }
+    return function() {};
+    });
+    mock('copyFromWindow', function(name) {
+    if (name === 'adobeDataLayer.push') { return function() {}; }
+    if (name === '_satellite.track') { return function() {}; }
+    return undefined;
+    });
+    mock('setInWindow', function(key, val) {
+    if (key === 'clickPatrolClassification') { winClass = val; }
+    });
+    mock('callInWindow', function(name, evName, payload) {
+    if (name === '_satellite.track') { satelliteCalled = { evName: evName, payload: payload }; }
+    });
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    runCode({uid: 'TEST-UID-1234', enableAdobeDirectCall: true});
+    assertThat(winClass.event).isEqualTo('ClickPatrol_Legitimate');
+    assertThat(winClass.traffic).isEqualTo('safe');
+    assertThat(adobePushed.event).isEqualTo('ClickPatrol_Legitimate');
+    assertThat(satelliteCalled.evName).isEqualTo('ClickPatrol_Legitimate');
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Memory storage mode writes zero cookies and zero localStorage
+  code: |-
+    let cookiesWritten = 0;
+    let lsWritten = 0;
+    let memStore = {};
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Suspicious'; }
+    if (key === 'traffic') { return 'fake'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === '_cpMemStore') { return memStore; }
+    return undefined;
+    });
+    mock('setInWindow', function(key, val) {
+    if (key === '_cpMemStore') { memStore = val; }
+    });
+    mock('getCookieValues', function() { return []; });
+    mock('setCookie', function() { cookiesWritten = cookiesWritten + 1; });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() { lsWritten = lsWritten + 1; },
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    runCode({uid: 'TEST-UID-1234', storageMode: 'memory', enableGclidRecovery: true, extendFacebook: true});
+    assertThat(cookiesWritten).isEqualTo(0);
+    assertThat(lsWritten).isEqualTo(0);
+    assertThat(memStore.cp_class).isEqualTo('1.S.f.00000000.rs');
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Session storage mode caps visitor cookie TTL to 24 hours and skips localStorage
+  code: |-
+    let visitorTtl = 0;
+    let lsWritten = 0;
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function() { return []; });
+    mock('setCookie', function(name, val, opts) {
+    if (name === 'cp_visitor_id') { visitorTtl = opts['max-age']; }
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() { lsWritten = lsWritten + 1; },
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess) { onSuccess(); });
+    runCode({uid: 'TEST-UID-1234', storageMode: 'session'});
+    assertThat(visitorTtl).isEqualTo(24 * 60 * 60);
+    assertThat(lsWritten).isEqualTo(0);
+    assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
 
 ClickPatrol Traffic Quality measurement tag for Google Tag Manager.
+
+Consent & storage modes (storageMode):
+- full (default): first-party cookies (cp_visitor_id 400d, cp_session_id 24h,
+  cp_class 24h, cp_audience 24h) plus localStorage backup.
+- session: caps all ClickPatrol cookies (including cp_visitor_id) to 24 hours
+  and disables localStorage reads and writes.
+- memory: cookieless / in-memory only. Zero cookies and zero localStorage
+  entries are read or written; state is kept in window._cpMemStore for the
+  current page view. Can be upgraded dynamically after consent via
+  window.ClickPatrol.setStorageMode('full').
+
+Adobe Launch / cross-platform exposure:
+- Every classification sets window.clickPatrolClassification and
+  window.ClickPatrol.classification ({ event, traffic, audience }).
+- When window.adobeDataLayer is present, the classification payload is pushed
+  to adobeDataLayer automatically.
+- When enableAdobeDirectCall is checked and _satellite.track is present, the
+  tag calls _satellite.track(eventName, payload).
+- window.ClickPatrol.trackConversion(item) sends a conversion directly.
 
 Cookie lifetime extension (optional, opt-in per provider, all OFF by default):
 - Runs client-side, so only JavaScript-readable first-party cookies can be extended.

@@ -7,7 +7,7 @@ First-party stores used by the GTM template and the CMS / website loaders.
 
 | Key | TTL | Contents |
 | --- | --- | --- |
-| `cp_visitor_id` | 400 days | Visitor id (already live) |
+| `cp_visitor_id` | 400 days (or 24 hours in `session` mode) | Visitor id (already live) |
 | `cp_session_id` | 24 hours, rolling | Session id (already live) |
 | `cp_class` | 24 hours | Event + traffic only |
 | `cp_audience` | 24 hours | Opaque audience object |
@@ -15,6 +15,16 @@ First-party stores used by the GTM template and the CMS / website loaders.
 
 Flags: `path=/`, `SameSite=Lax`, `Secure` on HTTPS, broadest registrable domain.
 Each store has a localStorage key of the same name. Write localStorage only when the value changes.
+
+## Consent & storage modes (`storageMode` / `STORAGE_MODE`)
+
+- `full` (default): writes the first-party cookies and `localStorage` keys above.
+- `session`: caps all first-party cookies (including `cp_visitor_id`) to 24 hours and skips all `localStorage` reads and writes.
+- `memory`: cookieless / in-memory only. Zero cookies and zero `localStorage` keys are read or written; state is kept in memory for the current page view and can be upgraded after consent via `window.ClickPatrol.setStorageMode('full')`.
+
+## Cross-platform & Adobe Launch exposure
+
+On every classification and cached replay, both the GTM template and `website-tag.js` set `window.clickPatrolClassification` and `window.ClickPatrol.classification`, push the payload to `window.adobeDataLayer` when present, and optionally call `window._satellite.track(eventName, payload)`. `website-tag.js` also dispatches browser `CustomEvent`s (`ClickPatrol_Legitimate`, `ClickPatrol_Suspicious`, `ClickPatrol_Classification`) on `window`.
 
 ## `cp_class`
 
