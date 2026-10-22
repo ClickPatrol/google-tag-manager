@@ -29,9 +29,15 @@ function makeEnv(world, opts) {
     decodeUriComponent: decodeURIComponent,
     getCookieValues: (n) => (world.cookies[n] ? [world.cookies[n]] : []),
     setCookie: (n, v, o) => {
-      world.cookies[n] = v;
+      world.cookies = world.cookies || {};
       world.cookieOpts = world.cookieOpts || {};
       world.cookieOpts[n] = o || {};
+      const maxAge = o && o['max-age'];
+      if (maxAge === 0 || maxAge === '0') {
+        delete world.cookies[n];
+        return;
+      }
+      world.cookies[n] = v;
     },
     localStorage: {
       getItem: (k) => (k in world.ls ? world.ls[k] : null),
@@ -223,11 +229,11 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('clickPatrolClassification is set on window',
     !!w.win.clickPatrolClassification && w.win.clickPatrolClassification.event === 'ClickPatrol_Legitimate' && w.win.clickPatrolClassification.audience.dhl_clean === true,
     JSON.stringify(w.win.clickPatrolClassification));
-  check('adobeDataLayer receives classification push',
-    adobeCalls.length === 1 && adobeCalls[0].event === 'ClickPatrol_Legitimate',
+  check('adobeDataLayer nests traffic and audience under clickPatrol',
+    adobeCalls.length === 1 && adobeCalls[0].event === 'ClickPatrol_Legitimate' && !adobeCalls[0].traffic && adobeCalls[0].clickPatrol.traffic === 'safe' && adobeCalls[0].clickPatrol.audience.dhl_clean === true,
     JSON.stringify(adobeCalls));
   check('_satellite.track fires when enableAdobeDirectCall is true',
-    satelliteCalls.length === 1 && satelliteCalls[0].name === 'ClickPatrol_Legitimate',
+    satelliteCalls.length === 1 && satelliteCalls[0].name === 'ClickPatrol_Legitimate' && satelliteCalls[0].payload.clickPatrol.traffic === 'safe',
     JSON.stringify(satelliteCalls));
 
   w.win.ClickPatrol.trackConversion({ conversion_id: 'dhl_order_1', conversion_type: 'purchase', conversion_value: 42, conversion_currency: 'EUR' });
@@ -297,6 +303,16 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('memory mode still reads gclid from _gcl_aw and writes no cookies',
     memConv.includes('gclid=cookieclid') && wMemClick.cookies.cp_visitor_id === 'cp_stale_visitor' && !wMemClick.cookies.cp_session_id && Object.keys(wMemClick.ls).length === 0,
     JSON.stringify({ url: memConv, cookies: wMemClick.cookies }));
+
+  const wDrop = newWorld([]);
+  wDrop.cookies._gcl_aw = 'GCL.1.keep';
+  run(wDrop, { dl: { event: 'ClickPatrol_Suspicious', traffic: 'fake' } });
+  wDrop.win.ClickPatrol.trackConversion({ conversion_id: 'order_w', conversion_type: 'lead' });
+  wDrop.win.ClickPatrol.setStorageMode('memory');
+  check('setStorageMode memory deletes ClickPatrol cookies and localStorage',
+    !wDrop.cookies.cp_visitor_id && !wDrop.cookies.cp_session_id && !wDrop.cookies.cp_class && !wDrop.ls.cp_visitor_id && !wDrop.ls.cp_class && !wDrop.ls.cp_conv && wDrop.cookies._gcl_aw === 'GCL.1.keep',
+    JSON.stringify({ cookies: wDrop.cookies, ls: wDrop.ls }));
+  check('ClickPatrol.version is set', wDrop.win.ClickPatrol.version === '1.1.0', wDrop.win.ClickPatrol.version);
 }
 
 let failed = 0;

@@ -206,6 +206,7 @@ const getType = require('getType');
 const JSON = require('JSON');
 const Math = require('Math');
 
+const TAG_VERSION = '1.1.0';
 const VISITOR_KEY = 'cp_visitor_id';
 const SESSION_KEY = 'cp_session_id';
 const CLASS_KEY = 'cp_class';
@@ -323,6 +324,33 @@ function lsRemove(key) {
     return;
   }
   localStorage.removeItem(key);
+}
+
+function expireOwnCookie(name) {
+  removeMem(name);
+  setCookie(name, '', {
+    'domain': 'auto',
+    'path': '/',
+    'max-age': 0,
+    'samesite': 'lax',
+    'secure': true
+  });
+}
+
+function clearOwnStorage() {
+  expireOwnCookie(VISITOR_KEY);
+  expireOwnCookie(SESSION_KEY);
+  expireOwnCookie(CLASS_KEY);
+  expireOwnCookie(AUDIENCE_KEY);
+  removeMem(CONV_KEY);
+  if (!localStorage) {
+    return;
+  }
+  localStorage.removeItem(VISITOR_KEY);
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(CLASS_KEY);
+  localStorage.removeItem(AUDIENCE_KEY);
+  localStorage.removeItem(CONV_KEY);
 }
 
 function readCookie(name) {
@@ -673,12 +701,20 @@ function emitClassification(eventName, traffic, audience) {
     return;
   }
   setInWindow(CLASS_EMITTED_FLAG, sig, true);
+  const clickPatrol = { traffic: payload.traffic };
+  if (payload.audience) {
+    clickPatrol.audience = payload.audience;
+  }
+  const adobeEvent = {
+    event: eventName,
+    clickPatrol: clickPatrol
+  };
   if (getType(copyFromWindow('adobeDataLayer.push')) === 'function') {
     const pushAdobe = createQueue('adobeDataLayer');
-    pushAdobe(payload);
+    pushAdobe(adobeEvent);
   }
   if (data.enableAdobeDirectCall && getType(copyFromWindow('_satellite.track')) === 'function') {
-    callInWindow('_satellite.track', eventName, payload);
+    callInWindow('_satellite.track', eventName, adobeEvent);
   }
 }
 
@@ -1068,12 +1104,14 @@ function exposeClickPatrolApi(sessId, visId) {
     }
     sendConversion(sessId, item, true);
   };
+  api.version = TAG_VERSION;
   api.setStorageMode = function(mode) {
     if (mode !== 'full' && mode !== 'session' && mode !== 'memory') {
       return;
     }
     setInWindow(STORAGE_MODE_FLAG, mode, true);
     if (mode === 'memory') {
+      clearOwnStorage();
       return;
     }
     const vId = getMem(VISITOR_KEY) || visId;
@@ -5206,7 +5244,10 @@ scenarios:
     assertThat(winClass.event).isEqualTo('ClickPatrol_Legitimate');
     assertThat(winClass.traffic).isEqualTo('safe');
     assertThat(adobePushed.event).isEqualTo('ClickPatrol_Legitimate');
+    assertThat(adobePushed.clickPatrol.traffic).isEqualTo('safe');
+    assertThat(adobePushed.clickPatrol.audience.dhl_clean).isEqualTo(true);
     assertThat(satelliteCalled.evName).isEqualTo('ClickPatrol_Legitimate');
+    assertThat(satelliteCalled.payload.clickPatrol.traffic).isEqualTo('safe');
     assertApi('gtmOnSuccess').wasCalled();
 - name: Memory storage mode writes zero cookies and zero localStorage
   code: |-
@@ -5336,6 +5377,42 @@ scenarios:
     assertThat(cookiesWritten).isEqualTo(0);
     assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_mem&conversion_type=TRANSACTION&gclid=cookieclid');
     assertApi('gtmOnSuccess').wasCalled();
+- name: setStorageMode memory deletes ClickPatrol cookies and localStorage
+  code: |-
+    let api = null;
+    let expiredVisitor = false;
+    let removed = 0;
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === 'ClickPatrol') { return api; }
+    return undefined;
+    });
+    mock('setInWindow', function(key, val) {
+    if (key === 'ClickPatrol') { api = val; }
+    });
+    mock('getCookieValues', function() { return []; });
+    mock('setCookie', function(name, val, opts) {
+    if (name === 'cp_visitor_id' && opts['max-age'] === 0) { expiredVisitor = true; }
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() { removed = removed + 1; }
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess) { onSuccess(); });
+    runCode({uid: 'TEST-UID-1234'});
+    api.setStorageMode('memory');
+    assertThat(expiredVisitor).isEqualTo(true);
+    assertThat(removed).isEqualTo(5);
+    assertThat(api.version).isEqualTo('1.1.0');
+    assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
 
@@ -5349,17 +5426,20 @@ Consent & storage modes (storageMode):
   lifetime of GCLID recovery and cookie extension.
 - memory: writes no ClickPatrol cookies and no localStorage. Advertising
   cookies such as _gcl_aw are still read so a conversion keeps its click id.
-  ClickPatrol state stays in window._cpMemStore for the page view and can be
-  upgraded after consent via window.ClickPatrol.setStorageMode('full').
+  ClickPatrol state stays in window._cpMemStore for the page view.
+  window.ClickPatrol.setStorageMode('memory') deletes the cp_* cookies and
+  localStorage keys. setStorageMode('full') writes them again after consent.
 
 Adobe Launch / cross-platform exposure:
 - Every classification sets window.clickPatrolClassification and
   window.ClickPatrol.classification ({ event, traffic, audience }).
-- When window.adobeDataLayer is present, the classification payload is pushed
-  to adobeDataLayer automatically.
+- When window.adobeDataLayer is present, the tag pushes
+  { event, clickPatrol: { traffic, audience } }. traffic and audience are not
+  top-level fields on that bus. dataLayer pushes stay flat.
 - When enableAdobeDirectCall is checked and _satellite.track is present, the
-  tag calls _satellite.track(eventName, payload).
+  tag calls _satellite.track(eventName, { event, clickPatrol: { traffic, audience } }).
 - window.ClickPatrol.trackConversion(item) sends a conversion directly.
+- window.ClickPatrol.version is the template version.
 
 Cookie lifetime extension (optional, opt-in per provider, all OFF by default):
 - Runs client-side, so only JavaScript-readable first-party cookies can be extended.

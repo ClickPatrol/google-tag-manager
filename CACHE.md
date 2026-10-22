@@ -20,11 +20,11 @@ Each store has a localStorage key of the same name. Write localStorage only when
 
 - `full` (default): writes the first-party cookies and `localStorage` keys above.
 - `session`: caps ClickPatrol cookies (including `cp_visitor_id`) to 24 hours and skips all `localStorage` reads and writes. Advertising cookies keep their own lifetime.
-- `memory`: writes no ClickPatrol cookies and no `localStorage`. Existing advertising cookies are still read so a conversion keeps its click id. ClickPatrol state stays in memory for the current page view and can be upgraded after consent via `window.ClickPatrol.setStorageMode('full')`.
+- `memory`: writes no ClickPatrol cookies and no `localStorage`. Existing advertising cookies are still read so a conversion keeps its click id. ClickPatrol state stays in memory for the current page view. `window.ClickPatrol.setStorageMode('memory')` deletes the `cp_*` cookies and localStorage keys. `setStorageMode('full')` writes them again after consent.
 
 ## Cross-platform & Adobe Launch exposure
 
-On every classification and cached replay, both the GTM template and `website-tag.js` set `window.clickPatrolClassification` and `window.ClickPatrol.classification`, push the payload to `window.adobeDataLayer` when present, and optionally call `window._satellite.track(eventName, payload)`. `website-tag.js` also dispatches browser `CustomEvent`s (`ClickPatrol_Legitimate`, `ClickPatrol_Suspicious`, `ClickPatrol_Classification`) on `window`.
+On every classification and cached replay, both the GTM template and `website-tag.js` set `window.clickPatrolClassification` and `window.ClickPatrol.classification` to `{ event, traffic, audience }`. The `adobeDataLayer` push and optional `_satellite.track` payload are `{ event, clickPatrol: { traffic, audience } }`, so those fields do not sit next to the page schema. `dataLayer` pushes stay flat. `website-tag.js` also dispatches browser `CustomEvent`s (`ClickPatrol_Legitimate`, `ClickPatrol_Suspicious`, `ClickPatrol_Classification`) on `window`, with the flat detail. A second copy of the snippet returns immediately (`ClickPatrol.snippetLoaded`). `ClickPatrol.version` is `1.1.0`.
 
 ## `cp_class`
 
