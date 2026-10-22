@@ -199,17 +199,16 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
 }
 
 {
-  const w = newWorld([]);
-  w.win['document.readyState'] = 'loading';
+  const w = newWorld([{ 'gtm.start': 1000, event: 'gtm.js' }]);
   const urls = run(w, { dl: { event: 'gtm.js' } });
-  check('trck-002 waits while the document is still loading', !urls.some((u) => u.includes('trck-002')), urls.join(' '));
-  w.win['document.readyState'] = 'complete';
+  check('trck-002 waits while gtm.load is not yet in dataLayer', !urls.some((u) => u.includes('trck-002')), urls.join(' '));
+  w.win.dataLayer.push({ event: 'gtm.load' });
   let guard = 0;
   while (!urls.some((u) => u.includes('trck-002')) && w.timers.length && guard < 8) {
     w.timers.shift()();
     guard++;
   }
-  check('trck-002 loads once the document is complete', urls.some((u) => u.includes('trck-002')), 'guard ' + guard);
+  check('trck-002 loads once gtm.load is pushed to dataLayer', urls.some((u) => u.includes('trck-002')), 'guard ' + guard);
 }
 
 // 8. Adobe Launch exposure: clickPatrolClassification, adobeDataLayer, _satellite.track, and ClickPatrol.trackConversion.

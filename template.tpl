@@ -69,7 +69,7 @@ ___TEMPLATE_PARAMETERS___
     ],
     "simpleValueType": true,
     "defaultValue": "full",
-    "help": "Controls how ClickPatrol stores its visitor id, session id and classification cache. Session only caps ClickPatrol cookies at 24 hours and skips localStorage. Advertising cookies keep their own lifetime. Memory only writes no ClickPatrol cookies and no localStorage. Existing advertising cookies are still read so a conversion keeps its click id. You can pass a GTM variable, or upgrade after consent via window.ClickPatrol.setStorageMode('full')."
+    "help": "Controls how ClickPatrol stores its visitor id, session id and classification cache. Session only caps ClickPatrol cookies at 24 hours and skips localStorage. Advertising cookies keep their own lifetime. Memory only writes no ClickPatrol cookies and no localStorage. Existing advertising cookies are still read so a conversion keeps its click id. You can pass a GTM variable, or upgrade after consent via window.ClickPatrol.setStorageMode(\u0027full\u0027)."
   },
   {
     "type": "CHECKBOX",
@@ -709,11 +709,12 @@ function emitClassification(eventName, traffic, audience) {
     event: eventName,
     clickPatrol: clickPatrol
   };
-  if (getType(copyFromWindow('adobeDataLayer.push')) === 'function') {
+  const adobeDl = copyFromWindow('adobeDataLayer');
+  if (adobeDl && (getType(adobeDl) === 'array' || getType(adobeDl) === 'object')) {
     const pushAdobe = createQueue('adobeDataLayer');
     pushAdobe(adobeEvent);
   }
-  if (data.enableAdobeDirectCall && getType(copyFromWindow('_satellite.track')) === 'function') {
+  if (data.enableAdobeDirectCall) {
     callInWindow('_satellite.track', eventName, adobeEvent);
   }
 }
@@ -1064,6 +1065,24 @@ function dataLayerLength(dl) {
   return dl.length ? dl.length : 0;
 }
 
+function isPageStillLoading() {
+  const dl = copyFromWindow('dataLayer');
+  const len = dataLayerLength(dl);
+  let hasGtmStart = false;
+  for (let i = 0; i < len; i++) {
+    const item = dl[i];
+    if (item && getType(item) === 'object') {
+      if (item.event === 'gtm.load') {
+        return false;
+      }
+      if (item['gtm.start']) {
+        hasGtmStart = true;
+      }
+    }
+  }
+  return hasGtmStart;
+}
+
 function startConversionWatch(sessId) {
   if (copyFromWindow(CONV_WATCH_FLAG)) {
     return;
@@ -1216,10 +1235,10 @@ if (currentEvent === 'ClickPatrol_Conversion') {
     scriptUrl = scriptUrl + '&session_id=' + encodeUriComponent(sessionId);
 
     // A <script> inserted before window.load holds the load event, even when
-    // async. document.readyState is a string, so the sandbox can read that
-    // one key. 'loading' and 'interactive' wait. 'complete' injects now.
-    // Any other value (a test mock, or a container that has not granted the
-    // key) injects now, so a missed permission cannot drop the tracker.
+    // async. When the GTM container snippet started (gtm.start in dataLayer)
+    // and gtm.load has not yet been pushed to dataLayer, wait for gtm.load.
+    // window.document is a predefined global and cannot be listed in
+    // access_globals.
     if (copyFromWindow('_cpTrckSrc') === scriptUrl) {
       data.gtmOnSuccess();
     } else {
@@ -1234,8 +1253,7 @@ if (currentEvent === 'ClickPatrol_Conversion') {
         });
       };
       const waitForLoad = function() {
-        const state = copyFromWindow('document.readyState');
-        if (state !== 'loading' && state !== 'interactive') {
+        if (!isPageStillLoading()) {
           fireTracker();
           return;
         }
@@ -3407,45 +3425,6 @@ ___WEB_PERMISSIONS___
                 "mapValue": [
                   {
                     "type": 1,
-                    "string": "document.readyState"
-                  },
-                  {
-                    "type": 8,
-                    "boolean": true
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  }
-                ]
-              },
-              {
-                "type": 3,
-                "mapKey": [
-                  {
-                    "type": 1,
-                    "string": "key"
-                  },
-                  {
-                    "type": 1,
-                    "string": "read"
-                  },
-                  {
-                    "type": 1,
-                    "string": "write"
-                  },
-                  {
-                    "type": 1,
-                    "string": "execute"
-                  }
-                ],
-                "mapValue": [
-                  {
-                    "type": 1,
                     "string": "clickPatrolClassification"
                   },
                   {
@@ -3563,50 +3542,11 @@ ___WEB_PERMISSIONS___
                 "mapValue": [
                   {
                     "type": 1,
-                    "string": "adobeDataLayer.push"
-                  },
-                  {
-                    "type": 8,
-                    "boolean": true
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  }
-                ]
-              },
-              {
-                "type": 3,
-                "mapKey": [
-                  {
-                    "type": 1,
-                    "string": "key"
-                  },
-                  {
-                    "type": 1,
-                    "string": "read"
-                  },
-                  {
-                    "type": 1,
-                    "string": "write"
-                  },
-                  {
-                    "type": 1,
-                    "string": "execute"
-                  }
-                ],
-                "mapValue": [
-                  {
-                    "type": 1,
                     "string": "_satellite.track"
                   },
                   {
                     "type": 8,
-                    "boolean": true
+                    "boolean": false
                   },
                   {
                     "type": 8,
@@ -3882,18 +3822,18 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
-- name: Holds trck-002 until document.readyState is complete
+- name: Holds trck-002 until gtm.load is in the dataLayer
   code: |-
-    let state = 'loading';
-    let queued = [];
+    let dl = [{'gtm.start': 1000, event: 'gtm.js'}];
+    let laterTick = null;
     let injected = false;
     mock('copyFromDataLayer', function() {});
     mock('createQueue', function() { return function() {}; });
     mock('copyFromWindow', function(name) {
-    if (name === 'document.readyState') { return state; }
+    if (name === 'dataLayer') { return dl; }
     return [];
     });
-    mock('callLater', function(fn) { queued.push(fn); });
+    mock('callLater', function(fn) { laterTick = fn; });
     mock('getCookieValues', function(name) {
     return [];
     });
@@ -3914,13 +3854,8 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertThat(injected).isEqualTo(false);
-    state = 'complete';
-    let guard = 0;
-    while (injected === false && queued.length > 0 && guard < 8) {
-    let fn = queued.shift();
-    fn();
-    guard = guard + 1;
-    }
+    dl.push({event: 'gtm.load'});
+    laterTick();
     assertThat(injected).isEqualTo(true);
     assertApi('gtmOnSuccess').wasCalled();
 - name: Appends the page query string before the tracking params
@@ -5214,8 +5149,7 @@ scenarios:
     return function() {};
     });
     mock('copyFromWindow', function(name) {
-    if (name === 'adobeDataLayer.push') { return function() {}; }
-    if (name === '_satellite.track') { return function() {}; }
+    if (name === 'adobeDataLayer') { return []; }
     return undefined;
     });
     mock('setInWindow', function(key, val) {
@@ -5455,10 +5389,12 @@ Classification cache (cp_class + cp_audience):
   ClickPatrol_* payload in first-party cookies (plus localStorage backup).
 - All Pages is enough. The ClickPatrol_.* trigger on this tag is optional.
 - Later All Pages fires replay the same dataLayer push without calling trck-002.
-- A cache miss does not insert trck-002 while document.readyState is
-  loading or interactive. The script waits until complete, so a slow
-  tracker response does not hold window.load. A cache hit still replays
-  immediately. Conversion pixels are not delayed.
+- A cache miss does not insert trck-002 while the GTM container snippet
+  has started (gtm.start in window.dataLayer) and gtm.load has not yet
+  been pushed. The script waits until gtm.load so a slow tracker response
+  does not hold window.load. window.document is a predefined global and is
+  not allowed in access_globals. A cache hit still replays immediately.
+  Conversion pixels are not delayed.
 - A click id in the URL (source, gclid, gbraid, wbraid, fbclid, msclkid,
   ttclid, li_fat_id, vd) reclassifies only when it differs from the hash
   stored on cp_class. The same source or gclid replays. A 5-part cache
