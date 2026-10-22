@@ -1,14 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
-  - sha: 105cf5e1a8c0c155a45a2270d0936eb5985aca9e
-    changeNotes: Nest Adobe traffic and audience under clickPatrol, and delete ClickPatrol cookies and localStorage when setStorageMode("memory") withdraws consent. Template version 1.1.0.
-  - sha: d2543b33bd855b8e098161f37bba082f9aa67ac3
-    changeNotes: Keep session mode from shortening advertising cookies, and let memory mode still read existing ad cookies so a conversion keeps its click id.
-  - sha: 22e58f696d5a793c7a772933fc6843189ba11ccf
-    changeNotes: Add configurable consent storage modes (full, session, memory) and expose classification to window.clickPatrolClassification, window.adobeDataLayer, and optional _satellite.track.
-  - sha: 42066396d881359c525611e8f9c877fb551d2444
-    changeNotes: Load the tracker after window.load, so a slow trck-002 response does not hold the page. A cached classification still replays immediately.
+  - sha: 060b90ffcfdd01137ccd1facbfbd194d49d440e1
+    changeNotes: Add consent storage modes (full, session, memory), expose classification to window.clickPatrolClassification, window.adobeDataLayer, and optional _satellite.track, and wait for gtm.load in dataLayer before loading trck-002. Template version 1.1.0.
   - sha: fc2997a2492cbb1cbdf14ada3b3cd76063d47e6e
     changeNotes: Parse gbraid without an exception handler. The template sandbox rejects try, catch and finally, which blocked publishing the container.
   - sha: 0ff0c53f467c7093ec002f618f64bd2c87b09229
