@@ -60,16 +60,16 @@ ___TEMPLATE_PARAMETERS___
       },
       {
         "value": "session",
-        "displayValue": "Session only (24-hour cookies max, no localStorage)"
+        "displayValue": "Session only (ClickPatrol cookies max 24 hours, no localStorage)"
       },
       {
         "value": "memory",
-        "displayValue": "Memory only / Cookieless (no cookies, no localStorage)"
+        "displayValue": "Memory only (no ClickPatrol cookies or localStorage)"
       }
     ],
     "simpleValueType": true,
     "defaultValue": "full",
-    "help": "Controls how ClickPatrol stores its visitor ID, session ID, and classification cache. Use \u0027Session only\u0027 to cap all cookies to 24 hours without localStorage, or \u0027Memory only\u0027 for cookieless operation before consent. You can also pass a GTM variable or upgrade dynamically after consent via window.ClickPatrol.setStorageMode(\u0027full\u0027)."
+    "help": "Controls how ClickPatrol stores its visitor id, session id and classification cache. Session only caps ClickPatrol cookies at 24 hours and skips localStorage. Advertising cookies keep their own lifetime. Memory only writes no ClickPatrol cookies and no localStorage. Existing advertising cookies are still read so a conversion keeps its click id. You can pass a GTM variable, or upgrade after consent via window.ClickPatrol.setStorageMode('full')."
   },
   {
     "type": "CHECKBOX",
@@ -248,8 +248,14 @@ function lsAllowed() {
   return activeStorageMode() === 'full';
 }
 
-function effectiveCookieTtl(ttlSeconds) {
-  if (activeStorageMode() === 'session' && ttlSeconds > SESSION_TTL_SECONDS) {
+function isOwnStoreKey(name) {
+  return name === VISITOR_KEY || name === SESSION_KEY || name === CLASS_KEY || name === AUDIENCE_KEY;
+}
+
+// Session mode shortens only ClickPatrol's own cookies. Advertising cookies
+// keep the lifetime passed to setCookie by GCLID recovery and cookie extension.
+function ownCookieTtl(name, ttlSeconds) {
+  if (activeStorageMode() === 'session' && isOwnStoreKey(name) && ttlSeconds > SESSION_TTL_SECONDS) {
     return SESSION_TTL_SECONDS;
   }
   return ttlSeconds;
@@ -320,7 +326,9 @@ function lsRemove(key) {
 }
 
 function readCookie(name) {
-  if (!cookiesAllowed()) {
+  // Memory mode keeps ClickPatrol ids in memory. Other cookies, such as
+  // _gcl_aw, are still read so a conversion keeps its click id.
+  if (!cookiesAllowed() && isOwnStoreKey(name)) {
     return getMem(name);
   }
   const cookieValues = getCookieValues(name);
@@ -338,7 +346,7 @@ function writeCookie(name, value, ttlSeconds) {
   setCookie(name, value, {
     'domain': 'auto',
     'path': '/',
-    'max-age': effectiveCookieTtl(ttlSeconds),
+    'max-age': ownCookieTtl(name, ttlSeconds),
     'samesite': 'lax',
     'secure': true
   });
@@ -5262,6 +5270,72 @@ scenarios:
     assertThat(visitorTtl).isEqualTo(24 * 60 * 60);
     assertThat(lsWritten).isEqualTo(0);
     assertApi('gtmOnSuccess').wasCalled();
+- name: Session mode does not shorten advertising cookies
+  code: |-
+    let visitorTtl = 0;
+    let gclTtl = 0;
+    mock('copyFromDataLayer', function() {});
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === '_gcl_aw') { return ['GCL.1.keep']; }
+    return [];
+    });
+    mock('setCookie', function(name, val, opts) {
+    if (name === 'cp_visitor_id') { visitorTtl = opts['max-age']; }
+    if (name === '_gcl_aw') { gclTtl = opts['max-age']; }
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/page';
+    });
+    mock('injectScript', function(url, onSuccess) { onSuccess(); });
+    runCode({uid: 'TEST-UID-1234', storageMode: 'session', extendGoogleAds: true});
+    assertThat(visitorTtl).isEqualTo(24 * 60 * 60);
+    assertThat(gclTtl).isEqualTo(90 * 24 * 60 * 60);
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Memory mode still reads gclid from _gcl_aw
+  code: |-
+    let cookiesWritten = 0;
+    let injected = '';
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'ClickPatrol_Conversion'; }
+    if (key === 'conversion_id') { return 'order_mem'; }
+    if (key === 'conversion_type') { return 'purchase'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('getCookieValues', function(name) {
+    if (name === '_gcl_aw') { return ['GCL.123.cookieclid']; }
+    return [];
+    });
+    mock('setCookie', function() { cookiesWritten = cookiesWritten + 1; });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    mock('injectScript', function(url, onSuccess) {
+    injected = url;
+    onSuccess();
+    });
+    runCode({uid: 'TEST-UID-1234', storageMode: 'memory'});
+    assertThat(cookiesWritten).isEqualTo(0);
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_mem&conversion_type=TRANSACTION&gclid=cookieclid');
+    assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
 
@@ -5270,12 +5344,13 @@ ClickPatrol Traffic Quality measurement tag for Google Tag Manager.
 Consent & storage modes (storageMode):
 - full (default): first-party cookies (cp_visitor_id 400d, cp_session_id 24h,
   cp_class 24h, cp_audience 24h) plus localStorage backup.
-- session: caps all ClickPatrol cookies (including cp_visitor_id) to 24 hours
-  and disables localStorage reads and writes.
-- memory: cookieless / in-memory only. Zero cookies and zero localStorage
-  entries are read or written; state is kept in window._cpMemStore for the
-  current page view. Can be upgraded dynamically after consent via
-  window.ClickPatrol.setStorageMode('full').
+- session: caps ClickPatrol cookies (including cp_visitor_id) to 24 hours
+  and disables localStorage reads and writes. Advertising cookies keep the
+  lifetime of GCLID recovery and cookie extension.
+- memory: writes no ClickPatrol cookies and no localStorage. Advertising
+  cookies such as _gcl_aw are still read so a conversion keeps its click id.
+  ClickPatrol state stays in window._cpMemStore for the page view and can be
+  upgraded after consent via window.ClickPatrol.setStorageMode('full').
 
 Adobe Launch / cross-platform exposure:
 - Every classification sets window.clickPatrolClassification and

@@ -7,6 +7,14 @@ dataLayer event. All Pages is enough, so no second trigger is required.
 
 Do not use a separate Custom HTML conversion snippet.
 
+## Consent storage and Adobe Launch
+
+`Consent & storage mode` defaults to `full`: the same 400-day visitor cookie, 24-hour session cookie, classification cache and localStorage backup as before.
+
+`session` caps ClickPatrol cookies at 24 hours and skips localStorage. Advertising cookies keep their own lifetime. `memory` writes no ClickPatrol cookies and no localStorage. Existing ad cookies such as `_gcl_aw` are still read so a conversion keeps its click id. After consent, `window.ClickPatrol.setStorageMode('full')` writes the ids from that page.
+
+Every classification sets `window.clickPatrolClassification` and `window.ClickPatrol.classification`. When `adobeDataLayer` exists, the same payload is pushed there. `Trigger Adobe Launch Direct Call` is off by default. Turn it on only when `_satellite.track` should fire. `window.ClickPatrol.trackConversion({...})` sends a conversion without a dataLayer push.
+
 ## Conversion event
 
 Push this after a confirmed lead or purchase. `conversion_type` must be

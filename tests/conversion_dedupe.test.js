@@ -265,6 +265,38 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('session mode caps cp_visitor_id cookie TTL to 24h and skips localStorage',
     wSess.cookieOpts && wSess.cookieOpts.cp_visitor_id && wSess.cookieOpts.cp_visitor_id['max-age'] === 86400 && Object.keys(wSess.ls).length === 0,
     JSON.stringify({ cookieOpts: wSess.cookieOpts, ls: wSess.ls }));
+
+  const wFull = newWorld([]);
+  run(wFull, { dl: { event: 'gtm.js' } });
+  check('full mode keeps the 400 day visitor cookie',
+    wFull.cookieOpts && wFull.cookieOpts.cp_visitor_id && wFull.cookieOpts.cp_visitor_id['max-age'] === 400 * 24 * 60 * 60,
+    JSON.stringify(wFull.cookieOpts));
+
+  const wSessAds = { win: { dataLayer: [] }, cookies: { _gcl_aw: 'GCL.1.keep' }, ls: {}, timers: [], success: 0, failure: 0 };
+  run(wSessAds, {
+    dl: { event: 'gtm.js' },
+    data: { storageMode: 'session', extendGoogleAds: true },
+  });
+  check('session mode keeps the 90 day lifetime on _gcl_aw',
+    wSessAds.cookieOpts && wSessAds.cookieOpts.cp_visitor_id['max-age'] === 86400 && wSessAds.cookieOpts._gcl_aw['max-age'] === 90 * 24 * 60 * 60,
+    JSON.stringify(wSessAds.cookieOpts));
+
+  const wMemClick = {
+    win: { dataLayer: [] },
+    cookies: { _gcl_aw: 'GCL.123.cookieclid', cp_visitor_id: 'cp_stale_visitor' },
+    ls: {},
+    timers: [],
+    success: 0,
+    failure: 0,
+  };
+  const memUrls = run(wMemClick, {
+    dl: { event: 'ClickPatrol_Conversion', conversion_id: 'order_mem', conversion_type: 'purchase' },
+    data: { storageMode: 'memory' },
+  });
+  const memConv = conv(memUrls)[0] || '';
+  check('memory mode still reads gclid from _gcl_aw and writes no cookies',
+    memConv.includes('gclid=cookieclid') && wMemClick.cookies.cp_visitor_id === 'cp_stale_visitor' && !wMemClick.cookies.cp_session_id && Object.keys(wMemClick.ls).length === 0,
+    JSON.stringify({ url: memConv, cookies: wMemClick.cookies }));
 }
 
 let failed = 0;

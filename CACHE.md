@@ -19,8 +19,8 @@ Each store has a localStorage key of the same name. Write localStorage only when
 ## Consent & storage modes (`storageMode` / `STORAGE_MODE`)
 
 - `full` (default): writes the first-party cookies and `localStorage` keys above.
-- `session`: caps all first-party cookies (including `cp_visitor_id`) to 24 hours and skips all `localStorage` reads and writes.
-- `memory`: cookieless / in-memory only. Zero cookies and zero `localStorage` keys are read or written; state is kept in memory for the current page view and can be upgraded after consent via `window.ClickPatrol.setStorageMode('full')`.
+- `session`: caps ClickPatrol cookies (including `cp_visitor_id`) to 24 hours and skips all `localStorage` reads and writes. Advertising cookies keep their own lifetime.
+- `memory`: writes no ClickPatrol cookies and no `localStorage`. Existing advertising cookies are still read so a conversion keeps its click id. ClickPatrol state stays in memory for the current page view and can be upgraded after consent via `window.ClickPatrol.setStorageMode('full')`.
 
 ## Cross-platform & Adobe Launch exposure
 
