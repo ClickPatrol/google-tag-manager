@@ -3822,7 +3822,7 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234'});
     assertApi('gtmOnSuccess').wasCalled();
-- name: Holds trck-002 until gtm.load is in the dataLayer
+- name: Holds trck-002 until gtm load is in the dataLayer
   code: |-
     let dl = [{'gtm.start': 1000, event: 'gtm.js'}];
     let laterTick = null;
@@ -5132,7 +5132,7 @@ scenarios:
     runCode({uid: 'TEST-UID-1234'});
     assertThat(injected).isEqualTo(true);
     assertThat(convValue).isEqualTo('_session.trial_started');
-- name: Exposes classification on window, adobeDataLayer and _satellite.track
+- name: Exposes classification on window, adobeDataLayer and the satellite track call
   code: |-
     let winClass = null;
     let adobePushed = null;
