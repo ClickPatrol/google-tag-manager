@@ -1,7 +1,7 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
-  - sha: 45e43406a0f0a8a1981d28e8b1b09ecdac3faba7
+  - sha: c96fe6b2141256836dc685752f60137d55e452a2
     changeNotes: Add consent storage modes (full, session, memory), expose classification to window.clickPatrolClassification, window.adobeDataLayer, and optional _satellite.track, and wait for gtm.load in dataLayer before loading trck-002. Template version 1.1.0.
   - sha: fc2997a2492cbb1cbdf14ada3b3cd76063d47e6e
     changeNotes: Parse gbraid without an exception handler. The template sandbox rejects try, catch and finally, which blocked publishing the container.
