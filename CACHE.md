@@ -24,7 +24,7 @@ Each store has a localStorage key of the same name. Write localStorage only when
 
 ## Cross-platform & Adobe Launch exposure
 
-On every classification and cached replay, both the GTM template and `website-tag.js` set `window.clickPatrolClassification` and `window.ClickPatrol.classification` to `{ event, traffic, audience }`. The `adobeDataLayer` push and optional `_satellite.track` payload are `{ event, clickPatrol: { traffic, audience } }`, so those fields do not sit next to the page schema. `dataLayer` pushes stay flat. `website-tag.js` also dispatches browser `CustomEvent`s (`ClickPatrol_Legitimate`, `ClickPatrol_Suspicious`, `ClickPatrol_Classification`) on `window`, with the flat detail. A second copy of the snippet returns immediately (`ClickPatrol.snippetLoaded`). `ClickPatrol.version` is `1.2.0` in the GTM template and `1.1.0` in `website-tag.js`.
+On every classification and cached replay, both the GTM template and `website-tag.js` set `window.clickPatrolClassification` and `window.ClickPatrol.classification` to `{ event, traffic, audience }`. The `adobeDataLayer` push and optional `_satellite.track` payload are `{ event, clickPatrol: { traffic, audience } }`, so those fields do not sit next to the page schema. `dataLayer` pushes stay flat. `website-tag.js` also dispatches browser `CustomEvent`s (`ClickPatrol_Legitimate`, `ClickPatrol_Suspicious`, `ClickPatrol_Classification`) on `window`, with the flat detail. A second copy of the snippet returns immediately (`ClickPatrol.snippetLoaded`). `ClickPatrol.version` is `1.2.1` in the GTM template and `1.1.0` in `website-tag.js`.
 
 ## `cp_class`
 

@@ -20,7 +20,12 @@ function gtmType(v) {
 function makeEnv(world, opts) {
   const injected = [];
   const api = {
-    getUrl: (c) => (c === 'query' ? (opts.query || '') : (opts.href || 'https://example.com/thanks')),
+    getUrl: (c) => {
+      const href = opts.href || 'https://example.com/thanks';
+      if (c === 'query') return opts.query || '';
+      if (c === 'path') return new URL(href).pathname;
+      return href;
+    },
     injectScript: (url, ok, fail) => {
       injected.push(url);
       if (opts.resolveScript !== false && ok) ok();
@@ -216,6 +221,29 @@ const LOADING = () => [{ 'gtm.start': 1000, event: 'gtm.js' }];
   check('purchase trigger + watch send the order exactly once', total === 1, 'sent ' + total + ' time(s)');
 }
 
+// 3i. Thank-you page row: a page view of /bedankt/ sends one LEAD keyed on the path.
+{
+  const w = newWorld([]);
+  w.cookies._gcl_aw = 'GCL.1730000000.tyclid';
+  const opts = { dl: { event: 'gtm.js' }, href: 'https://shop.example/Bedankt/?order=1', data: { thankYouPages: [{ urlContains: '/bedankt', conversionType: 'lead' }] } };
+  const a = run(w, opts);
+  const b = run(w, opts);
+  const c = conv(a).concat(conv(b));
+  check('thank-you page sends one LEAD with the path as id and the gclid',
+    c.length === 1 && c[0].includes('conversion_id=%2FBedankt%2F&conversion_type=LEAD') && c[0].includes('gclid=tyclid'), JSON.stringify(c));
+  check('thank-you page still calls trck-002 for classification', a.some((u) => u.includes('trck-002')), a.join(' '));
+}
+
+// 3j. Purchase row and a page that does not match.
+{
+  const w = newWorld([]);
+  const rows = { thankYouPages: [{ urlContains: '/order-received', conversionType: 'purchase' }] };
+  const hit = run(w, { dl: { event: 'gtm.js' }, href: 'https://shop.example/checkout/order-received/991/', data: rows });
+  const miss = run(newWorld([]), { dl: { event: 'gtm.js' }, href: 'https://shop.example/checkout/', data: rows });
+  check('purchase thank-you row sends a TRANSACTION', conv(hit).length === 1 && conv(hit)[0].includes('conversion_type=TRANSACTION'), conv(hit).join(' '));
+  check('a page outside the thank-you rows sends nothing', conv(miss).length === 0, conv(miss).join(' '));
+}
+
 // 3h. gtm.* and ClickPatrol_* events never count as conversions, even in the table.
 {
   const w = newWorld([]);
@@ -406,7 +434,7 @@ const LOADING = () => [{ 'gtm.start': 1000, event: 'gtm.js' }];
   check('setStorageMode memory deletes ClickPatrol cookies and localStorage',
     !wDrop.cookies.cp_visitor_id && !wDrop.cookies.cp_session_id && !wDrop.cookies.cp_class && !wDrop.ls.cp_visitor_id && !wDrop.ls.cp_class && !wDrop.ls.cp_conv && wDrop.cookies._gcl_aw === 'GCL.1.keep',
     JSON.stringify({ cookies: wDrop.cookies, ls: wDrop.ls }));
-  check('ClickPatrol.version is set', wDrop.win.ClickPatrol.version === '1.2.0', wDrop.win.ClickPatrol.version);
+  check('ClickPatrol.version is set', wDrop.win.ClickPatrol.version === '1.2.1', wDrop.win.ClickPatrol.version);
 }
 
 let failed = 0;

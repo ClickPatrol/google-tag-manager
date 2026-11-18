@@ -58,6 +58,16 @@ every lead must count.
 
 `gtm.*` and `ClickPatrol_*` events never count as a conversion.
 
+## Thank-you pages
+
+Used the retired ClickPatrol conversion template on a Page View trigger
+of a thank-you page? Add that page under `Thank-you pages`: the text the
+URL contains (for example `/thank-you` or `/bedankt`) and the type, lead
+or purchase. A page view of a matching URL sends one conversion, with the
+page path as `conversion_id`. Matching ignores upper and lower case.
+Available from 1.2.1. Use a row or the GA4 event for the same conversion,
+not both, or it counts twice.
+
 Upgrading from 1.1.0: if you already push `ClickPatrol_Conversion` for
 the same purchase or lead, give it the same `conversion_id` as the GA4
 `transaction_id`, or turn the GA4 checkbox off. Otherwise one order can

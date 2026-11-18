@@ -135,6 +135,37 @@ ___TEMPLATE_PARAMETERS___
     "help": "Your own dataLayer events that count as a conversion, for example form_submit or order_complete. Same rules as the GA4 events: picked up while the page loads, and for a later event add its Custom Event trigger to this tag."
   },
   {
+    "type": "SIMPLE_TABLE",
+    "name": "thankYouPages",
+    "displayName": "Thank-you pages (optional)",
+    "simpleTableColumns": [
+      {
+        "defaultValue": "",
+        "displayName": "Page URL contains",
+        "name": "urlContains",
+        "type": "TEXT"
+      },
+      {
+        "defaultValue": "lead",
+        "displayName": "Type",
+        "name": "conversionType",
+        "type": "SELECT",
+        "selectItems": [
+          {
+            "value": "lead",
+            "displayValue": "Lead"
+          },
+          {
+            "value": "purchase",
+            "displayValue": "Purchase"
+          }
+        ]
+      }
+    ],
+    "newRowButtonText": "Add thank-you page",
+    "help": "A page view of a URL that contains this text counts as a conversion, for example /thank-you or /bedankt. This replaces the retired ClickPatrol conversion template on a Page View trigger. Matching ignores upper and lower case. conversion_id is the page path, so a refresh in the same session is not counted again. Use a row or the GA4 event for the same conversion, not both, or it counts twice."
+  },
+  {
     "type": "GROUP",
     "name": "cookieExtenderGroup",
     "displayName": "Cookie lifetime extension (optional)",
@@ -245,7 +276,7 @@ const getType = require('getType');
 const JSON = require('JSON');
 const Math = require('Math');
 
-const TAG_VERSION = '1.2.0';
+const TAG_VERSION = '1.2.1';
 const VISITOR_KEY = 'cp_visitor_id';
 const SESSION_KEY = 'cp_session_id';
 const CLASS_KEY = 'cp_class';
@@ -909,6 +940,40 @@ function conversionFromModel(eventName, type) {
   };
 }
 
+// lead or purchase when the page URL matches a thankYouPages row, else ''.
+function thankYouTypeFor(href) {
+  const rows = data.thankYouPages;
+  if (!rows || getType(rows) !== 'array') {
+    return '';
+  }
+  const url = asString(href).toLowerCase();
+  if (!url) {
+    return '';
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row && getType(row) === 'object') {
+      const part = asString(row.urlContains).toLowerCase();
+      const type = asString(row.conversionType).toLowerCase();
+      if (part && url.indexOf(part) !== -1 && (type === 'lead' || type === 'purchase')) {
+        return type;
+      }
+    }
+  }
+  return '';
+}
+
+// Page view of a thank-you page: one conversion per page load (claim) and
+// per session (cp_conv), keyed on the path.
+function sendThankYouConversion(sessId) {
+  const type = thankYouTypeFor(getUrl('href'));
+  if (!type) {
+    return;
+  }
+  const path = asString(getUrl('path')) || '/';
+  sendConversion(sessId, { conversion_id: path, conversion_type: type }, true);
+}
+
 function stripGclAw(raw) {
   if (!raw) {
     return '';
@@ -1332,6 +1397,7 @@ if (currentEvent === 'ClickPatrol_Conversion') {
   sendConversion(sessionId, conversionFromModel(currentEvent, currentConversionType), false);
 } else {
   startConversionWatch(sessionId);
+  sendThankYouConversion(sessionId);
   if (currentEvent && currentEvent.indexOf('ClickPatrol_') === 0) {
     storeFromDataLayer(sessionId);
     data.gtmOnSuccess();
@@ -5293,6 +5359,45 @@ scenarios:
     if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
     }
     assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=generate_lead&conversion_type=LEAD');
+- name: A thank-you page row sends one lead keyed on the page path
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'gtm.js'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('setInWindow', function() {});
+    mock('callLater', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    if (component === 'query') { return ''; }
+    if (component === 'path') { return '/bedankt/'; }
+    return 'https://shop.example/bedankt/';
+    });
+    let urls = [];
+    mock('injectScript', function(url, onSuccess) {
+    urls.push(url);
+    if (onSuccess) { onSuccess(); }
+    });
+    runCode({uid: 'TEST-UID-1234', thankYouPages: [{ urlContains: '/Bedankt', conversionType: 'lead' }]});
+    let conversionUrl = '';
+    for (let i = 0; i < urls.length; i++) {
+    if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
+    }
+    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=%2Fbedankt%2F&conversion_type=LEAD');
+    assertApi('gtmOnSuccess').wasCalled();
 - name: GA4 conversions switched off ignore a purchase event
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -5609,7 +5714,7 @@ scenarios:
     api.setStorageMode('memory');
     assertThat(expiredVisitor).isEqualTo(true);
     assertThat(removed).isEqualTo(5);
-    assertThat(api.version).isEqualTo('1.2.0');
+    assertThat(api.version).isEqualTo('1.2.1');
     assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
@@ -5670,6 +5775,10 @@ Conversion pixel (ClickPatrol_Conversion, GA4 events, own events):
   rows in conversionEvents. gtm.* and ClickPatrol_* never count. For a
   GA4 or own event, conversion_id is transaction_id (ecommerce or top
   level), else the event name; value and currency come from the same place.
+- Thank-you pages (thankYouPages): a fire on a page whose URL contains a
+  row's text (case-insensitive) sends one conversion of that row's type,
+  with the page path as conversion_id. Same use as the retired
+  conversion-tracking template on a Page View trigger. From 1.2.1.
 - The All Pages fire scans the dataLayer once and keeps scanning until
   gtm.load, so pushes before or during page load are sent without a
   second trigger. A conversion after load needs its Custom Event trigger
