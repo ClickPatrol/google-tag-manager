@@ -90,10 +90,49 @@ ___TEMPLATE_PARAMETERS___
   {
     "type": "CHECKBOX",
     "name": "dedupeConversions",
-    "checkboxText": "Ignore a repeated ClickPatrol_Conversion with the same conversion_id in this session",
+    "checkboxText": "Ignore a repeated conversion with the same conversion_id in this session",
     "simpleValueType": true,
     "defaultValue": true,
     "help": "Stops a thank-you page refresh from sending the same conversion twice. Stored in first-party localStorage as cp_conv. Turn off only if every fire must go through."
+  },
+  {
+    "type": "CHECKBOX",
+    "name": "useGa4Conversions",
+    "checkboxText": "Send GA4 purchase and generate_lead events as ClickPatrol conversions",
+    "simpleValueType": true,
+    "defaultValue": true,
+    "help": "The tag sends a purchase event as a purchase and a generate_lead event as a lead, with their click ids, to conversion.clckptrl.com. conversion_id is transaction_id (or the event name), value and currency come from the event or its ecommerce object. Events pushed while the page loads are picked up from All Pages. For an event after the page has loaded (for example a form without a page change), add that event's Custom Event trigger to this tag as well. No Custom HTML conversion snippet is needed."
+  },
+  {
+    "type": "SIMPLE_TABLE",
+    "name": "conversionEvents",
+    "displayName": "Other conversion events (optional)",
+    "simpleTableColumns": [
+      {
+        "defaultValue": "",
+        "displayName": "dataLayer event name",
+        "name": "eventName",
+        "type": "TEXT"
+      },
+      {
+        "defaultValue": "lead",
+        "displayName": "Type",
+        "name": "conversionType",
+        "type": "SELECT",
+        "selectItems": [
+          {
+            "value": "lead",
+            "displayValue": "Lead"
+          },
+          {
+            "value": "purchase",
+            "displayValue": "Purchase"
+          }
+        ]
+      }
+    ],
+    "newRowButtonText": "Add conversion event",
+    "help": "Your own dataLayer events that count as a conversion, for example form_submit or order_complete. Same rules as the GA4 events: picked up while the page loads, and for a later event add its Custom Event trigger to this tag."
   },
   {
     "type": "GROUP",
@@ -206,7 +245,7 @@ const getType = require('getType');
 const JSON = require('JSON');
 const Math = require('Math');
 
-const TAG_VERSION = '1.1.0';
+const TAG_VERSION = '1.2.0';
 const VISITOR_KEY = 'cp_visitor_id';
 const SESSION_KEY = 'cp_session_id';
 const CLASS_KEY = 'cp_class';
@@ -809,6 +848,67 @@ function mapConversionType(raw) {
   return '';
 }
 
+// lead or purchase when this dataLayer event counts as a conversion, else ''.
+// ClickPatrol_Conversion has its own path. gtm.* and ClickPatrol_* never count.
+function conversionTypeFor(eventName) {
+  const name = asString(eventName);
+  if (!name || name.indexOf('gtm.') === 0 || name.indexOf('ClickPatrol_') === 0) {
+    return '';
+  }
+  const rows = data.conversionEvents;
+  if (rows && getType(rows) === 'array') {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row && getType(row) === 'object' && asString(row.eventName) === name) {
+        const type = asString(row.conversionType).toLowerCase();
+        if (type === 'lead' || type === 'purchase') {
+          return type;
+        }
+      }
+    }
+  }
+  if (data.useGa4Conversions !== false) {
+    if (name === 'purchase') {
+      return 'purchase';
+    }
+    if (name === 'generate_lead') {
+      return 'lead';
+    }
+  }
+  return '';
+}
+
+function firstOf(a, b, c) {
+  if (a) {
+    return a;
+  }
+  if (b) {
+    return b;
+  }
+  return c || '';
+}
+
+// A conversion item from one dataLayer entry (watch path).
+function conversionFromItem(item, type) {
+  const ec = (item.ecommerce && getType(item.ecommerce) === 'object') ? item.ecommerce : {};
+  return {
+    conversion_id: firstOf(asString(ec.transaction_id), asString(item.transaction_id), asString(item.event)),
+    conversion_type: type,
+    conversion_value: firstOf(asString(ec.value), asString(item.value)),
+    conversion_currency: firstOf(asString(ec.currency), asString(item.currency))
+  };
+}
+
+// A conversion item from the GTM data model (trigger path on the event itself).
+function conversionFromModel(eventName, type) {
+  return {
+    conversion_id: firstOf(asString(copyFromDataLayer('ecommerce.transaction_id')), asString(copyFromDataLayer('transaction_id')), eventName),
+    conversion_type: type,
+    conversion_value: firstOf(asString(copyFromDataLayer('ecommerce.value')), asString(copyFromDataLayer('value'))),
+    conversion_currency: firstOf(asString(copyFromDataLayer('ecommerce.currency')), asString(copyFromDataLayer('currency')))
+  };
+}
+
 function stripGclAw(raw) {
   if (!raw) {
     return '';
@@ -1027,7 +1127,7 @@ function sendConversion(sessId, item, fromWatch) {
     rememberConversion(sessId, convId);
   }
 
-  let url = 'https://conversion.clckptrl.com/?uid=' + encodeUriComponent(data.uid);
+  let url = 'https://conversion.clckptrl.com/www/?uid=' + encodeUriComponent(data.uid);
   url = appendQuery(url, 'conversion_id', convId);
   url = appendQuery(url, 'conversion_label', asString(fieldFrom(item, 'conversion_label')));
   url = appendQuery(url, 'conversion_value', asString(fieldFrom(item, 'conversion_value')));
@@ -1094,20 +1194,33 @@ function startConversionWatch(sessId) {
     const len = dataLayerLength(dl);
     for (let i = seen; i < len; i++) {
       const item = dl[i];
-      if (item && getType(item) === 'object' && item.event === 'ClickPatrol_Conversion') {
-        sendConversion(sessId, item, true);
+      if (item && getType(item) === 'object') {
+        if (item.event === 'ClickPatrol_Conversion') {
+          sendConversion(sessId, item, true);
+        } else {
+          const type = conversionTypeFor(item.event);
+          if (type) {
+            sendConversion(sessId, conversionFromItem(item, type), true);
+          }
+        }
       }
     }
     seen = len;
   };
   scan();
-  // callLater is the sandbox timer (setTimeout 0). window.setTimeout is a
-  // predefined global, so access_globals will not accept that key.
+  // callLater is the sandbox timer (setTimeout 0, no delay). The watch runs
+  // only until gtm.load, so it is never a loop for the page lifetime. A
+  // conversion pushed after load reaches the tag through its Custom Event
+  // trigger, which is the exact path anyway.
   const tick = function() {
     scan();
-    callLater(tick);
+    if (isPageStillLoading()) {
+      callLater(tick);
+    }
   };
-  callLater(tick);
+  if (isPageStillLoading()) {
+    callLater(tick);
+  }
 }
 
 function exposeClickPatrolApi(sessId, visId) {
@@ -1211,9 +1324,12 @@ if (cookiesAllowed()) {
   }
 }
 
-const currentEvent = copyFromDataLayer('event');
+const currentEvent = asString(copyFromDataLayer('event'));
+const currentConversionType = conversionTypeFor(currentEvent);
 if (currentEvent === 'ClickPatrol_Conversion') {
   sendConversion(sessionId, null, false);
+} else if (currentConversionType) {
+  sendConversion(sessionId, conversionFromModel(currentEvent, currentConversionType), false);
 } else {
   startConversionWatch(sessionId);
   if (currentEvent && currentEvent.indexOf('ClickPatrol_') === 0) {
@@ -3780,6 +3896,30 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "tblci"
+              },
+              {
+                "type": 1,
+                "string": "transaction_id"
+              },
+              {
+                "type": 1,
+                "string": "value"
+              },
+              {
+                "type": 1,
+                "string": "currency"
+              },
+              {
+                "type": 1,
+                "string": "ecommerce.transaction_id"
+              },
+              {
+                "type": 1,
+                "string": "ecommerce.value"
+              },
+              {
+                "type": 1,
+                "string": "ecommerce.currency"
               }
             ]
           }
@@ -4525,7 +4665,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
     assertApi('gtmOnSuccess').wasCalled();
 - name: Sends a purchase conversion with value, currency and Google Ads label
   code: |-
@@ -4561,7 +4701,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_99&conversion_label=AbCdEfGhIjk&conversion_value=149.95&conversion_currency=EUR&conversion_type=TRANSACTION');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=order_99&conversion_label=AbCdEfGhIjk&conversion_value=149.95&conversion_currency=EUR&conversion_type=TRANSACTION');
     assertApi('gtmOnSuccess').wasCalled();
 - name: Ignores an unknown conversion_type
   code: |-
@@ -4656,7 +4796,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gclid=urlclid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gclid=urlclid');
 - name: Fills gclid from _gcl_aw and strips the GCL prefix
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4689,7 +4829,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gclid=cookieclid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gclid=cookieclid');
 - name: Fills fbclid from _fbc and strips the fb prefix
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4722,7 +4862,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&fbclid=fbclidvalue');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&fbclid=fbclidvalue');
 - name: Fills wbraid from _gcl_gb and keeps only the third segment
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4755,7 +4895,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&wbraid=wbraidvalue');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&wbraid=wbraidvalue');
 - name: Fills gbraid from _gcl_ag and reads the k field
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4788,7 +4928,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gbraid=0AAAAA-gbraid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gbraid=0AAAAA-gbraid');
 - name: Prefers gbraid and wbraid from the URL over the cookies
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4825,7 +4965,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gbraid=urlgbraid&wbraid=urlwbraid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD&gbraid=urlgbraid&wbraid=urlwbraid');
 - name: Skips a gbraid or wbraid cookie that is not in Google's format
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -4860,7 +5000,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
     assertThat(injected.indexOf('gbraid=')).isEqualTo(-1);
     assertThat(injected.indexOf('wbraid=')).isEqualTo(-1);
 - name: Omits empty conversion and click-id parameters
@@ -4896,7 +5036,7 @@ scenarios:
     onSuccess();
     });
     runCode({uid: 'TEST-UID-1234'});
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=trial_started&conversion_type=LEAD');
     assertThat(injected.indexOf('conversion_value')).isEqualTo(-1);
     assertThat(injected.indexOf('conversion_label')).isEqualTo(-1);
     assertThat(injected.indexOf('gclid=')).isEqualTo(-1);
@@ -5012,24 +5152,24 @@ scenarios:
     if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
     if (urls[i].indexOf('trck-002.clckptrl.com') !== -1) { trackerUrl = urls[i]; }
     }
-    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_10042&conversion_type=TRANSACTION');
+    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=order_10042&conversion_type=TRANSACTION');
     assertThat(trackerUrl.indexOf('https://trck-002.clckptrl.com/')).isEqualTo(0);
     assertApi('gtmOnSuccess').wasCalled();
-- name: All Pages sends a conversion pushed after the first fire
+- name: All Pages sends a conversion pushed while the page loads and stops at gtm load
   code: |-
     mock('copyFromDataLayer', function(key) {
     if (key === 'event') { return 'gtm.js'; }
     });
     mock('createQueue', function() { return function() {}; });
-    let dl = [{ event: 'gtm.js' }];
+    let dl = [{ 'gtm.start': 1000, event: 'gtm.js' }];
     mock('copyFromWindow', function(name) {
     if (name === '_cpConvWatch') { return false; }
     if (name === 'dataLayer') { return dl; }
     return [];
     });
     mock('setInWindow', function() {});
-    let laterTick = null;
-    mock('callLater', function(fn) { laterTick = fn; });
+    let later = [];
+    mock('callLater', function(fn) { later.push(fn); });
     mock('getCookieValues', function(name) {
     if (name === 'cp_session_id') { return ['cp_existing_session']; }
     return [];
@@ -5057,13 +5197,137 @@ scenarios:
     conversion_id: 'later_lead',
     conversion_type: 'lead'
     });
-    laterTick();
+    let watchTick = later.shift();
+    watchTick();
     let conversionUrl = '';
     for (let i = 0; i < urls.length; i++) {
     if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
     }
-    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=later_lead&conversion_type=LEAD');
+    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=later_lead&conversion_type=LEAD');
+    dl.push({ event: 'gtm.load' });
+    let turns = 0;
+    while (later.length > 0 && turns < 10) {
+    let batch = later;
+    later = [];
+    for (let j = 0; j < batch.length; j++) { batch[j](); }
+    turns = turns + 1;
+    }
+    assertThat(later.length).isEqualTo(0);
+    assertThat(turns < 10).isEqualTo(true);
     assertApi('gtmOnSuccess').wasCalled();
+- name: GA4 purchase on its own trigger sends a TRANSACTION with transaction id value and currency
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'purchase'; }
+    if (key === 'ecommerce.transaction_id') { return 'T-991'; }
+    if (key === 'ecommerce.value') { return 189; }
+    if (key === 'ecommerce.currency') { return 'EUR'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('setInWindow', function() {});
+    mock('callLater', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    if (name === '_gcl_aw') { return ['GCL.1730000000.cookieclid']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let urls = [];
+    mock('injectScript', function(url, onSuccess) {
+    urls.push(url);
+    if (onSuccess) { onSuccess(); }
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    assertThat(urls.length).isEqualTo(1);
+    assertThat(urls[0]).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=T-991&conversion_value=189&conversion_currency=EUR&conversion_type=TRANSACTION&gclid=cookieclid');
+    assertApi('gtmOnSuccess').wasCalled();
+- name: generate_lead already in the dataLayer sends a LEAD from All Pages
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'gtm.js'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function(name) {
+    if (name === '_cpConvWatch') { return false; }
+    if (name === 'dataLayer') { return [{ event: 'generate_lead', form_id: 'demo' }]; }
+    return [];
+    });
+    mock('setInWindow', function() {});
+    mock('callLater', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let urls = [];
+    mock('injectScript', function(url, onSuccess) {
+    urls.push(url);
+    if (onSuccess) { onSuccess(); }
+    });
+    runCode({uid: 'TEST-UID-1234'});
+    let conversionUrl = '';
+    for (let i = 0; i < urls.length; i++) {
+    if (urls[i].indexOf('conversion.clckptrl.com') !== -1) { conversionUrl = urls[i]; }
+    }
+    assertThat(conversionUrl).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=generate_lead&conversion_type=LEAD');
+- name: GA4 conversions switched off ignore a purchase event
+  code: |-
+    mock('copyFromDataLayer', function(key) {
+    if (key === 'event') { return 'purchase'; }
+    if (key === 'transaction_id') { return 'T-1'; }
+    });
+    mock('createQueue', function() { return function() {}; });
+    mock('copyFromWindow', function() { return []; });
+    mock('setInWindow', function() {});
+    mock('callLater', function() {});
+    mock('getCookieValues', function(name) {
+    if (name === 'cp_session_id') { return ['cp_existing_session']; }
+    return [];
+    });
+    mockObject('localStorage', {
+    getItem: function() { return null; },
+    setItem: function() {},
+    removeItem: function() {}
+    });
+    mock('generateRandom', function() { return 0; });
+    mock('getTimestampMillis', function() { return 1000; });
+    mock('setCookie', function() {});
+    mock('getQueryParameters', function() {});
+    mock('getUrl', function(component) {
+    return component === 'query' ? '' : 'https://example.com/thanks';
+    });
+    let urls = [];
+    mock('injectScript', function(url, onSuccess) {
+    urls.push(url);
+    if (onSuccess) { onSuccess(); }
+    });
+    runCode({uid: 'TEST-UID-1234', useGa4Conversions: false});
+    for (let i = 0; i < urls.length; i++) {
+    assertThat(urls[i].indexOf('conversion.clckptrl.com')).isEqualTo(-1);
+    }
 - name: A Custom Event trigger does not resend a conversion the watch already claimed
   code: |-
     mock('copyFromDataLayer', function(key) {
@@ -5309,7 +5573,7 @@ scenarios:
     });
     runCode({uid: 'TEST-UID-1234', storageMode: 'memory'});
     assertThat(cookiesWritten).isEqualTo(0);
-    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/?uid=TEST-UID-1234&conversion_id=order_mem&conversion_type=TRANSACTION&gclid=cookieclid');
+    assertThat(injected).isEqualTo('https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=order_mem&conversion_type=TRANSACTION&gclid=cookieclid');
     assertApi('gtmOnSuccess').wasCalled();
 - name: setStorageMode memory deletes ClickPatrol cookies and localStorage
   code: |-
@@ -5345,7 +5609,7 @@ scenarios:
     api.setStorageMode('memory');
     assertThat(expiredVisitor).isEqualTo(true);
     assertThat(removed).isEqualTo(5);
-    assertThat(api.version).isEqualTo('1.1.0');
+    assertThat(api.version).isEqualTo('1.2.0');
     assertApi('gtmOnSuccess').wasCalled();
 
 ___NOTES___
@@ -5400,9 +5664,16 @@ Classification cache (cp_class + cp_audience):
   stored on cp_class. The same source or gclid replays. A 5-part cache
   without a hash still reclassifies once, then stores the hash.
 
-Conversion pixel (ClickPatrol_Conversion):
-- All Pages is enough. The first fire installs a dataLayer watch, so a
-  later ClickPatrol_Conversion push is sent without a second trigger.
+Conversion pixel (ClickPatrol_Conversion, GA4 events, own events):
+- Conversion events: ClickPatrol_Conversion, plus purchase (purchase) and
+  generate_lead (lead) while useGa4Conversions is on (default), plus the
+  rows in conversionEvents. gtm.* and ClickPatrol_* never count. For a
+  GA4 or own event, conversion_id is transaction_id (ecommerce or top
+  level), else the event name; value and currency come from the same place.
+- The All Pages fire scans the dataLayer once and keeps scanning until
+  gtm.load, so pushes before or during page load are sent without a
+  second trigger. A conversion after load needs its Custom Event trigger
+  on this tag (reuse the trigger of the Google Ads / GA4 conversion tag).
 - A Custom Event trigger on ClickPatrol_Conversion is still supported and
   is the exact path: it sends immediately instead of on the next scan.
   Both routes together cannot double-send (see the two guards below).
@@ -5410,7 +5681,10 @@ Conversion pixel (ClickPatrol_Conversion):
   optional conversion_label (Google Ads label), and optional value/currency.
 - The tag maps lead to LEAD and purchase to TRANSACTION, fills click ids
   from the dataLayer, then the page URL, then the platform cookie, and loads
-  https://conversion.clckptrl.com/. Empty values are left off the request.
+  https://conversion.clckptrl.com/www/, the same endpoint as the retired
+  conversion-tracking template (the root URL answers with a 301 to
+  www/index.php, so 1.2.0 calls www/ directly and saves that hop). Empty
+  values are left off the request.
   It does not call trck-002 on this event.
 - Google click ids on a later page come from the cookies the Google tag
   already wrote, and only after ad_storage was granted. gclid is read from
@@ -5427,8 +5701,8 @@ Conversion pixel (ClickPatrol_Conversion):
   is async, so marking afterwards left a window where a second reader passed
   the check. A pixel that fails to load is therefore not retried.
 - The watch scans window.dataLayer, then reschedules itself with callLater
-  (the sandbox timer). window.setTimeout is a predefined global and is not
-  allowed in access_globals. The sandbox has no dataLayer listener API
-  (addEventCallback is per-event tag monitoring). Cost: a callLater loop for
-  the page lifetime. Use the Custom Event trigger when you want the send on
-  the push itself instead of on the next turn.
+  (the sandbox timer, no delay) only while gtm.start is present and gtm.load
+  is not. window.setTimeout is a predefined global and is not allowed in
+  access_globals. The sandbox has no dataLayer listener API
+  (addEventCallback is per-event tag monitoring). Up to 1.1.0 this loop ran
+  for the page lifetime; from 1.2.0 it ends at gtm.load.

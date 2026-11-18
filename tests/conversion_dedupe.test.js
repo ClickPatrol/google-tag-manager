@@ -106,29 +106,124 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('All Pages still calls trck-002', urls.some((u) => u.includes('trck-002')), '');
 }
 
-// 2. All Pages, push arrives afterwards, watch tick sends it.
+// Runs the callLater callbacks that are queued right now (one turn).
+function tickOnce(w) {
+  const batch = w.timers.splice(0);
+  batch.forEach((fn) => fn());
+  return batch.length;
+}
+const LOADING = () => [{ 'gtm.start': 1000, event: 'gtm.js' }];
+
+// 2. All Pages while the page loads, push arrives afterwards, watch tick sends it.
 {
-  const w = newWorld([{ event: 'gtm.js' }]);
+  const w = newWorld(LOADING());
   const urls = run(w, { dl: { event: 'gtm.js' } });
   check('no conversion before the push', conv(urls).length === 0, '');
   w.win.dataLayer.push({ event: 'ClickPatrol_Conversion', conversion_id: 'later_lead', conversion_type: 'lead' });
-  w.timers.shift()();
+  tickOnce(w);
   const c = conv(urls);
-  check('watch sends a conversion pushed after the first fire', c.length === 1 && c[0].includes('conversion_id=later_lead&conversion_type=LEAD'), JSON.stringify(c));
+  check('watch sends a conversion pushed while the page loads', c.length === 1 && c[0].includes('conversion_id=later_lead&conversion_type=LEAD'), JSON.stringify(c));
+}
+
+// 2b. The watch stops at gtm.load: no callLater loop for the page lifetime.
+{
+  const w = newWorld(LOADING());
+  run(w, { dl: { event: 'gtm.js' } });
+  w.win.dataLayer.push({ event: 'gtm.load' });
+  let turns = 0;
+  while (w.timers.length && turns < 50) {
+    tickOnce(w);
+    turns++;
+  }
+  check('watch stops after gtm.load', w.timers.length === 0 && turns < 50, 'turns ' + turns + ', queued ' + w.timers.length);
+}
+
+// 2c. Page already loaded when the tag fires: one scan, no timer at all.
+{
+  const w = newWorld([{ 'gtm.start': 1000, event: 'gtm.js' }, { event: 'gtm.load' }]);
+  run(w, { dl: { event: 'gtm.js' } });
+  check('no watch timer once the page has loaded', w.timers.length === 0, 'queued ' + w.timers.length);
 }
 
 // 3. Both routes: watch installed on All Pages, then a Custom Event trigger fire.
 {
-  const w = newWorld([{ event: 'gtm.js' }]);
+  const w = newWorld(LOADING());
   const first = run(w, { dl: { event: 'gtm.js' } });
   const item = { event: 'ClickPatrol_Conversion', conversion_id: 'order_777', conversion_type: 'purchase' };
   w.win.dataLayer.push(item);
   // Custom Event trigger fires its own execution, script still in flight.
   const second = run(w, { dl: { event: 'ClickPatrol_Conversion', conversion_id: 'order_777', conversion_type: 'purchase' }, resolveScript: false });
   // Watch tick runs afterwards and sees the same item.
-  w.timers.shift()();
+  tickOnce(w);
   const total = conv(first).length + conv(second).length;
   check('trigger + watch send the conversion exactly once', total === 1, 'sent ' + total + ' time(s)');
+}
+
+// 3b. GA4 purchase on its own trigger: TRANSACTION with transaction_id, value, currency.
+{
+  const w = newWorld([]);
+  const urls = run(w, { dl: { event: 'purchase', 'ecommerce.transaction_id': 'T-991', 'ecommerce.value': 189, 'ecommerce.currency': 'EUR' } });
+  const c = conv(urls);
+  check('GA4 purchase trigger sends a TRANSACTION',
+    c.length === 1 && c[0] === 'https://conversion.clckptrl.com/www/?uid=TEST-UID-1234&conversion_id=T-991&conversion_value=189&conversion_currency=EUR&conversion_type=TRANSACTION',
+    c[0] || '');
+  check('a conversion fire does not call trck-002', !urls.some((u) => u.includes('trck-002')), urls.join(' '));
+}
+
+// 3c. GA4 purchase with gclid from the _gcl_aw cookie.
+{
+  const w = newWorld([]);
+  w.cookies._gcl_aw = 'GCL.1730000000.cookieclid';
+  const urls = run(w, { dl: { event: 'purchase', transaction_id: 'T-5' } });
+  const c = conv(urls);
+  check('GA4 purchase carries gclid from _gcl_aw', c.length === 1 && c[0].includes('conversion_id=T-5') && c[0].includes('gclid=cookieclid'), c[0] || '');
+}
+
+// 3d. generate_lead already in the dataLayer: All Pages sends a LEAD without a trigger.
+{
+  const w = newWorld([{ event: 'generate_lead', form_id: 'demo' }]);
+  const urls = run(w, { dl: { event: 'gtm.js' } });
+  const c = conv(urls);
+  check('generate_lead in the dataLayer sends a LEAD', c.length === 1 && c[0].includes('conversion_id=generate_lead&conversion_type=LEAD'), c[0] || '');
+}
+
+// 3e. GA4 events off: purchase is ignored.
+{
+  const w = newWorld([{ event: 'purchase', transaction_id: 'T-1' }]);
+  const urls = run(w, { dl: { event: 'gtm.js' }, data: { useGa4Conversions: false } });
+  check('useGa4Conversions false ignores purchase', conv(urls).length === 0, conv(urls).join(' '));
+}
+
+// 3f. Own event from the table.
+{
+  const w = newWorld([]);
+  const urls = run(w, {
+    dl: { event: 'form_submit' },
+    data: { conversionEvents: [{ eventName: 'form_submit', conversionType: 'lead' }] },
+  });
+  const c = conv(urls);
+  check('table event form_submit sends a LEAD', c.length === 1 && c[0].includes('conversion_id=form_submit&conversion_type=LEAD'), c[0] || '');
+}
+
+// 3g. purchase trigger and the load watch see the same order: sent once.
+{
+  const w = newWorld(LOADING());
+  const first = run(w, { dl: { event: 'gtm.js' } });
+  w.win.dataLayer.push({ event: 'purchase', ecommerce: { transaction_id: 'T-42', value: 10, currency: 'EUR' } });
+  const second = run(w, { dl: { event: 'purchase', 'ecommerce.transaction_id': 'T-42', 'ecommerce.value': 10, 'ecommerce.currency': 'EUR' }, resolveScript: false });
+  tickOnce(w);
+  const total = conv(first).length + conv(second).length;
+  check('purchase trigger + watch send the order exactly once', total === 1, 'sent ' + total + ' time(s)');
+}
+
+// 3h. gtm.* and ClickPatrol_* events never count as conversions, even in the table.
+{
+  const w = newWorld([]);
+  const urls = run(w, {
+    dl: { event: 'gtm.load' },
+    data: { conversionEvents: [{ eventName: 'gtm.load', conversionType: 'lead' }] },
+  });
+  check('gtm.load in the table is not a conversion', conv(urls).length === 0, conv(urls).join(' '));
 }
 
 // 4. Session marker is written even when the pixel never responds.
@@ -191,11 +286,11 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
 
 // 7. Watch installs only once across executions.
 {
-  const w = newWorld([{ event: 'gtm.js' }]);
+  const w = newWorld(LOADING());
   run(w, { dl: { event: 'gtm.js' } });
   const afterFirst = w.timers.length;
   run(w, { dl: { event: 'gtm.js' } });
-  check('watch installs once per page', afterFirst === 1 && w.timers.length === 1, 'timers ' + w.timers.length);
+  check('watch installs once per page', afterFirst >= 1 && w.timers.length === afterFirst, 'first ' + afterFirst + ', after second ' + w.timers.length);
 }
 
 {
@@ -311,7 +406,7 @@ const conv = (urls) => urls.filter((u) => u.indexOf('conversion.clckptrl.com') =
   check('setStorageMode memory deletes ClickPatrol cookies and localStorage',
     !wDrop.cookies.cp_visitor_id && !wDrop.cookies.cp_session_id && !wDrop.cookies.cp_class && !wDrop.ls.cp_visitor_id && !wDrop.ls.cp_class && !wDrop.ls.cp_conv && wDrop.cookies._gcl_aw === 'GCL.1.keep',
     JSON.stringify({ cookies: wDrop.cookies, ls: wDrop.ls }));
-  check('ClickPatrol.version is set', wDrop.win.ClickPatrol.version === '1.1.0', wDrop.win.ClickPatrol.version);
+  check('ClickPatrol.version is set', wDrop.win.ClickPatrol.version === '1.2.0', wDrop.win.ClickPatrol.version);
 }
 
 let failed = 0;

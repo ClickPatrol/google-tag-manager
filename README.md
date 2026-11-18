@@ -2,10 +2,10 @@
 
 Google Tag Manager template for ClickPatrol traffic quality.
 
-The same tag also sends conversions when it sees a `ClickPatrol_Conversion`
-dataLayer event. All Pages is enough, so no second trigger is required.
-
-Do not use a separate Custom HTML conversion snippet.
+The same tag also sends conversions, with their click ids, to
+`https://conversion.clckptrl.com/www/`, the endpoint the retired
+conversion-tracking template used. GA4 `purchase` and `generate_lead` events count
+by default. No Custom HTML conversion snippet is needed.
 
 ## Consent storage and Adobe Launch
 
@@ -42,9 +42,26 @@ window.dataLayer.push({
   to match or upload this conversion to that Google Ads action.
 - `conversion_type` is `lead` or `purchase`.
 
-The ClickPatrol tag does not listen to `purchase` or `generate_lead` by
-itself. Your existing conversion tag, thank-you page, or GTM Custom HTML
-pushes `ClickPatrol_Conversion` when those events fire.
+## GA4 events and your own events
+
+`Send GA4 purchase and generate_lead events as ClickPatrol conversions`
+is on by default (1.2.0). A `purchase` event is sent as a purchase, a
+`generate_lead` event as a lead. `conversion_id` is `transaction_id`
+(top level or in `ecommerce`), otherwise the event name. `value` and
+`currency` come from the same place. Add your own event names under
+`Other conversion events`, each with type lead or purchase.
+
+A lead without `transaction_id` uses the event name as `conversion_id`,
+so with deduplication on, one lead per event name counts per session.
+Push `ClickPatrol_Conversion` with your own unique `conversion_id` when
+every lead must count.
+
+`gtm.*` and `ClickPatrol_*` events never count as a conversion.
+
+Upgrading from 1.1.0: if you already push `ClickPatrol_Conversion` for
+the same purchase or lead, give it the same `conversion_id` as the GA4
+`transaction_id`, or turn the GA4 checkbox off. Otherwise one order can
+count twice.
 
 ## Example triggers
 
@@ -102,16 +119,23 @@ A trial without a Google Ads action can omit `conversion_label`.
 
 ## GTM setup
 
-1. Keep the ClickPatrol Ad Traffic Quality tag on All Pages. That one
-   fire also watches for later `ClickPatrol_Conversion` pushes.
-2. Let your purchase / lead tag push the event above, or add a small
-   Custom HTML tag on those same triggers that only does the push.
+1. Keep the ClickPatrol Ad Traffic Quality tag on All Pages. That fire
+   picks up conversion events already in the dataLayer and the ones
+   pushed while the page is still loading (until `gtm.load`), such as a
+   thank-you page.
+2. For a conversion that happens after the page has loaded, such as a
+   form that submits without a page change, add that event's Custom
+   Event trigger to this same tag. Reuse the trigger of your Google Ads
+   or GA4 conversion tag (`purchase`, `generate_lead`, your own event),
+   or a trigger on `ClickPatrol_Conversion`.
 
-Optional, for the fastest path: also fire this tag on a Custom Event
-trigger named `ClickPatrol_Conversion`. That sends the conversion on the
-push itself instead of on the next watch turn. Running both routes is
-safe, because the tag claims each `conversion_id` once per page load and
-once per session.
+Running both routes is safe, because the tag claims each
+`conversion_id` once per page load and once per session.
+
+Before 1.2.0 the All Pages fire watched the dataLayer for the lifetime of
+the page with a `callLater` loop (the sandbox has no delayed timer and no
+dataLayer listener). 1.2.0 stops that watch at `gtm.load`, so the tag no
+longer runs work on every turn of the event loop after the page loaded.
 
 Find the Google Ads label under Tools > Conversions > the conversion
 action > Tag setup. It is the second part of `AW-XXXXXXX/LABEL`.
