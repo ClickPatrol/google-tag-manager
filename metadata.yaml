@@ -1,6 +1,8 @@
 homepage: "https://clickpatrol.com"
 documentation: "https://clickpatrol.com/knowledge-base/how-to-set-up-the-clickpatrol-website-tag-in-google-tag-manager/"
 versions:
+  - sha: d8883869aae19725608bb60b91e709f70f5f01de
+    changeNotes: Template 1.2.1. Adds Thank-you pages, a table of URL fragments (for example /thank-you) with type lead or purchase. A page view of a matching URL sends one conversion with its click ids, keyed on the page path. This replaces the retired ClickPatrol conversion template on a Page View trigger. Use a row or the GA4 event for the same conversion, not both.
   - sha: 6d0e69d14b2083fae582c2da85b373807c152415
     changeNotes: Template 1.2.0. GA4 purchase and generate_lead events are sent as ClickPatrol conversions by default, own events can be added in a table, so no Custom HTML conversion snippet is needed. Conversions go to conversion.clckptrl.com/www/ with click ids from the URL or ad cookies. The dataLayer watch stops at gtm.load; add the Custom Event trigger of a conversion that happens after page load to this tag. If you already push ClickPatrol_Conversion for the same order, use the same conversion_id or turn the GA4 option off.
   - sha: c96fe6b2141256836dc685752f60137d55e452a2
