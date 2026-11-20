@@ -7,6 +7,27 @@ The same tag also sends conversions, with their click ids, to
 conversion-tracking template used. GA4 `purchase` and `generate_lead` events count
 by default. No Custom HTML conversion snippet is needed.
 
+## Content Security Policy
+
+A site with a Content Security Policy blocks the tag unless ClickPatrol
+is allowed to load scripts. Without it, no visit is classified and no
+conversion is sent. The console shows:
+
+```
+Loading the script 'https://trck-002.clckptrl.com/?uid=...' violates the following Content Security Policy directive: "script-src-elem ..."
+```
+
+Add both hosts to `script-src`, and to `script-src-elem` when the policy
+has that directive:
+
+```
+https://trck-002.clckptrl.com https://conversion.clckptrl.com
+```
+
+`https://*.clckptrl.com` works too. The script trck-002 returns only
+pushes an event to the `dataLayer` and loads nothing from other domains,
+so no other directive needs a change.
+
 ## Consent storage and Adobe Launch
 
 `Consent & storage mode` defaults to `full`: the same 400-day visitor cookie, 24-hour session cookie, classification cache and localStorage backup as before.
